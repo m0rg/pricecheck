@@ -10,6 +10,10 @@ local BAG_SLOT_END = 34
 function char.getUniqueInventoryItemTypes()
 	local items = {}
 	local seenIds = {}
+	local me = mq.TLO.Me
+	if not me or not me() then
+		return items
+	end
 	for i = BAG_SLOT_START, BAG_SLOT_END do
 		local bag = mq.TLO.Me.Inventory(i)
 		if bag and bag() then

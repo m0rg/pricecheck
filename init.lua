@@ -59,6 +59,23 @@ end
 local loadedHistory = storage.loadHistory()
 local loadedConfig = storage.loadConfig(defaultConfig)
 
+-- Ensure every entry has a valid unique ID on boot
+for i, entry in ipairs(loadedHistory) do
+	if type(entry) == "table" and type(entry.item) == "string" then
+		if not entry.id or entry.id == "" then
+			entry.id = string.format("%d_%d", os.time(), math.random(100000, 999999) + i)
+		end
+	end
+end
+
+-- Build static snapshot queue of items to filter in background to avoid UI concurrent mutation race conditions
+local itemsToFilter = {}
+for _, entry in ipairs(loadedHistory) do
+	if type(entry) == "table" and type(entry.item) == "string" then
+		table.insert(itemsToFilter, { id = entry.id, item = entry.item })
+	end
+end
+
 -- Populate bulk history on startup with names only
 local initialBulkHistory = {}
 local initItems = char.getUniqueInventoryItemTypes()
@@ -104,26 +121,31 @@ local filterIndex = 1
 while state.openGUI do
 	mq.doevents()
 
-	-- Non-blocking startup history filtering step (processes one entry per loop iteration)
+	-- Non-blocking startup history filtering step (processes one entry from static queue per loop iteration)
 	if needHistoryFilter then
-		if filterIndex <= #state.priceHistory then
-			local entry = state.priceHistory[filterIndex]
-			if type(entry) == "table" and type(entry.item) == "string" then
-				if not entry.id or entry.id == "" then
-					entry.id = string.format("%d_%d", os.time(), math.random(100000, 999999))
-				end
-				local count, bankCount = char.getItemCounts(entry.item)
-				if count + bankCount == 0 then
-					table.remove(state.priceHistory, filterIndex)
-				else
-					if entry.status == "Searching..." then
-						entry.status = "Failed"
+		if filterIndex <= #itemsToFilter then
+			local filterEntry = itemsToFilter[filterIndex]
+			local count, bankCount = char.getItemCounts(filterEntry.item)
+			if count + bankCount == 0 then
+				-- Find and remove by unique ID to be immune to UI mutation index shifting
+				for idx = 1, #state.priceHistory do
+					if state.priceHistory[idx].id == filterEntry.id then
+						table.remove(state.priceHistory, idx)
+						break
 					end
-					filterIndex = filterIndex + 1
 				end
 			else
-				table.remove(state.priceHistory, filterIndex)
+				-- Safe status validation
+				for idx = 1, #state.priceHistory do
+					if state.priceHistory[idx].id == filterEntry.id then
+						if state.priceHistory[idx].status == "Searching..." then
+							state.priceHistory[idx].status = "Failed"
+						end
+						break
+					end
+				end
 			end
+			filterIndex = filterIndex + 1
 		else
 			needHistoryFilter = false
 			saveHistory()

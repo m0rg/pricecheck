@@ -1,7 +1,8 @@
 local dto = {}
 
--- History entry DTO
+-- History entry DTO with type assertions
 function dto.newHistoryEntry(itemName, status, id, data, listedPrice)
+	assert(type(itemName) == "string", "itemName must be a string")
 	return {
 		id = id or string.format("%d_%d", os.time(), math.random(100000, 999999)),
 		item = itemName,
@@ -11,8 +12,10 @@ function dto.newHistoryEntry(itemName, status, id, data, listedPrice)
 	}
 end
 
--- Bulk inventory check item entry DTO
+-- Bulk inventory check item entry DTO with type assertions
 function dto.newBulkEntry(itemId, itemName, status, medianPlatPrice, hasData, sampleSize)
+	assert(type(itemId) == "number", "itemId must be a number")
+	assert(type(itemName) == "string", "itemName must be a string")
 	return {
 		itemId = itemId,
 		item = itemName,
@@ -23,8 +26,10 @@ function dto.newBulkEntry(itemId, itemName, status, medianPlatPrice, hasData, sa
 	}
 end
 
--- Received tell entry DTO
+-- Received tell entry DTO with type assertions
 function dto.newTellEntry(sender, message, timestamp)
+	assert(type(sender) == "string", "sender must be a string")
+	assert(type(message) == "string", "message must be a string")
 	return {
 		sender = sender,
 		message = message,

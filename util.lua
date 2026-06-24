@@ -17,6 +17,9 @@ function util.parseISOTimestamp(str)
 
 	-- Create UTC time table (interpreted as local by os.time)
 	local utcTime = os.time({ year = year, month = month, day = day, hour = hour, min = min, sec = sec })
+	if not utcTime then
+		return nil
+	end
 
 	return utcTime + timezoneBias
 end
