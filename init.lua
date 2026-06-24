@@ -12,15 +12,15 @@ else
 	myPath = "pricecheck."
 end
 
-local ui = require(myPath .. "ui")
-local http = require(myPath .. "http")
+local ui = require(myPath .. "modules.ui")
+local http = require(myPath .. "modules.http")
 local PackageMan = require("mq/PackageMan")
 local json = PackageMan.Require("lua-cjson", "cjson")
-local storage = require(myPath .. "storage")
-local char = require(myPath .. "char")
-local dto = require(myPath .. "dto")
-local chat = require(myPath .. "chat")
-local util = require(myPath .. "util")
+local storage = require(myPath .. "modules.storage")
+local char = require(myPath .. "modules.char")
+local dto = require(myPath .. "modules.dto")
+local chat = require(myPath .. "modules.chat")
+local util = require(myPath .. "modules.util")
 
 -- Initialize UI and Chat modules with dependencies (SRP / DI)
 ui.setup(char, dto, chat, util)
