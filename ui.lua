@@ -566,6 +566,18 @@ function ui.render(state)
 
 						-- Column 1: Item Name
 						ImGui.TableSetColumnIndex(1)
+						if entry.status == "Success" and entry.data then
+							local sellSamples = entry.data.sellSampleSize or 0
+							if sellSamples <= 5 then
+								ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "[!] ")
+								if ImGui.IsItemHovered() then
+									ImGui.BeginTooltip()
+									ImGui.Text(string.format("Small sample size: only %d sample(s) available", sellSamples))
+									ImGui.EndTooltip()
+								end
+								ImGui.SameLine()
+							end
+						end
 						local displayName = (entry.data and entry.data.item) or entry.item
 						ImGui.Text(displayName)
 
