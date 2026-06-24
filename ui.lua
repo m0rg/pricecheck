@@ -426,7 +426,7 @@ function ui.render(state)
 
 	ImGui.SetNextWindowSize(550, 520, ImGuiCond.FirstUseEver)
 
-	local open, shouldDraw = ImGui.Begin("TLP Price Checker & Sales Tool", state.openGUI)
+	local open, shouldDraw = ImGui.Begin("Frostreaver Trade Tools", state.openGUI)
 	state.openGUI = open
 	if shouldDraw then
 		local cursorItem = mq.TLO.Cursor
