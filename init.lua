@@ -193,6 +193,54 @@ mq.event('TellEvent', '#1# tells you, \'#2#', function(line, sender, message)
 	end
 end)
 
+-- Helper function to extract item links from an auction message
+local function extractLinks(message)
+	local links = {}
+	if not message then return links end
+
+	-- Find all segments enclosed by \x12
+	for content in string.gmatch(message, "\x12([^\x12]+)\x12") do
+		local hex, name = nil, nil
+		-- Check 54-char hex prefix (Live/TLP)
+		if #content > 54 then
+			local h = content:sub(1, 54)
+			if h:match("^%x+$") then
+				hex = h
+				name = content:sub(55)
+			end
+		end
+		-- Check 9-char hex prefix (classic/emulator)
+		if not hex and #content > 9 then
+			local h = content:sub(1, 9)
+			if h:match("^%x+$") then
+				hex = h
+				name = content:sub(10)
+			end
+		end
+		-- Check 8-char hex prefix (used in test cases)
+		if not hex and #content > 8 then
+			local h = content:sub(1, 8)
+			if h:match("^%x+$") then
+				hex = h
+				name = content:sub(9)
+			end
+		end
+		-- Fallback: greedily match hex prefix
+		if not hex then
+			local h, n = content:match("^(%x+)(.*)$")
+			if h and h ~= "" then
+				hex = h
+				name = n
+			end
+		end
+
+		if hex and name and name ~= "" then
+			table.insert(links, { hex = hex, name = name })
+		end
+	end
+	return links
+end
+
 -- Register event listener for incoming auctions
 local function processAuction(sender, message)
 	if not state.recordAuctions then
@@ -200,14 +248,19 @@ local function processAuction(sender, message)
 	end
 
 	if sender and message then
-		-- Clean up the trailing single quote
+		-- Clean up leading/trailing single quotes if present
+		if message:sub(1, 1) == "'" then
+			message = message:sub(2)
+		end
 		if message:sub(-1) == "'" then
 			message = message:sub(1, -2)
 		end
 
-		-- Scan message for EverQuest item links: \x12 + hex + item_name + \x12
-		for hex, name in string.gmatch(message, "\x12(%x+)([^\x12]+)\x12") do
+		-- Scan message for EverQuest item links
+		local links = extractLinks(message)
+		for _, linkInfo in ipairs(links) do
 			local itemId = nil
+			local hex = linkInfo.hex
 			if #hex >= 8 then
 				local idHex = hex:sub(3, 8)
 				itemId = tonumber(idHex, 16)
@@ -216,8 +269,8 @@ local function processAuction(sender, message)
 			table.insert(state.auctionMonitor, 1, {
 				time = os.time(),
 				sender = sender,
-				item = name,
-				link = "\x12" .. hex .. name .. "\x12",
+				item = linkInfo.name,
+				link = "\x12" .. hex .. linkInfo.name .. "\x12",
 				itemId = itemId,
 				status = "Not Checked"
 			})
@@ -230,11 +283,11 @@ local function processAuction(sender, message)
 	end
 end
 
-mq.event('AuctionEvent1', '#1# auctions, \'#2#', function(line, sender, message)
+mq.event('AuctionEvent1', '#1# auctions, #2#', function(line, sender, message)
 	processAuction(sender, message)
 end)
 
-mq.event('AuctionEvent2', 'You auction, \'#1#', function(line, message)
+mq.event('AuctionEvent2', 'You auction, #1#', function(line, message)
 	local myName = mq.TLO.Me.CleanName() or "You"
 	processAuction(myName, message)
 end)
