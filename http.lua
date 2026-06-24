@@ -66,4 +66,94 @@ function http.performSearch(entry, onComplete)
 	end
 end
 
+-- Function to execute bulk HTTP request (run only in main script loop)
+function http.performBulkSearch(itemIds, onComplete)
+	if not itemIds or #itemIds == 0 then
+		if onComplete then
+			onComplete(nil, false, "No item IDs")
+		end
+		return
+	end
+
+	local mq = require("mq")
+	local ltn12 = require("ltn12")
+	local aggregatedItems = {}
+	local kronoRate = nil
+	local lastUpdated = nil
+	local serverName = "Frostreaver"
+	local lastError = nil
+
+	-- Process itemIds in chunks of 10
+	for i = 1, #itemIds, 10 do
+		local chunk = {}
+		for j = i, math.min(i + 9, #itemIds) do
+			table.insert(chunk, itemIds[j])
+		end
+
+		local payload = {
+			serverName = serverName,
+			itemIds = chunk,
+		}
+
+		local ok, body = pcall(json.encode, payload)
+		if not ok then
+			lastError = "JSON encoding error"
+			break
+		end
+
+		local response_body = {}
+		local ok_req, res, code, headers, status = pcall(https.request, {
+			url = "https://tlp-auctions.com/api/prices/bulk",
+			method = "POST",
+			headers = {
+				["Content-Type"] = "application/json",
+				["Content-Length"] = tostring(#body),
+			},
+			source = ltn12.source.string(body),
+			sink = ltn12.sink.table(response_body),
+		})
+
+		if not ok_req or code ~= 200 or not response_body then
+			lastError = code and tostring(code) or "Request Failed"
+			break
+		end
+
+		local resp_str = table.concat(response_body)
+		local status_dec, result = pcall(json.decode, resp_str)
+		if not status_dec or type(result) ~= "table" then
+			lastError = "JSON decoding error"
+			break
+		end
+
+		kronoRate = result.kronoRate or kronoRate
+		lastUpdated = result.lastUpdated or lastUpdated
+		if result.items then
+			for _, item in ipairs(result.items) do
+				table.insert(aggregatedItems, item)
+			end
+		end
+
+		-- Yield to MacroQuest loop between calls if there are more chunks
+		if i + 10 <= #itemIds then
+			mq.delay(50)
+		end
+	end
+
+	if #aggregatedItems > 0 then
+		local finalResult = {
+			serverName = serverName,
+			kronoRate = kronoRate,
+			lastUpdated = lastUpdated,
+			items = aggregatedItems,
+		}
+		if onComplete then
+			onComplete(finalResult, true)
+		end
+	else
+		if onComplete then
+			onComplete(nil, false, lastError or "No data returned")
+		end
+	end
+end
+
 return http
