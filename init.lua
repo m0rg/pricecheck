@@ -243,6 +243,9 @@ end
 
 -- Register event listener for incoming auctions
 local function processAuction(sender, message)
+	-- Print a debug message to the MQ console so the user can verify if the event triggers
+	print(string.format("[PriceCheck Debug] Auction event triggered: sender=%s, message=%s, recordAuctions=%s", tostring(sender), tostring(message), tostring(state.recordAuctions)))
+
 	if not state.recordAuctions then
 		return
 	end
@@ -258,21 +261,33 @@ local function processAuction(sender, message)
 
 		-- Scan message for EverQuest item links
 		local links = extractLinks(message)
-		for _, linkInfo in ipairs(links) do
-			local itemId = nil
-			local hex = linkInfo.hex
-			if #hex >= 8 then
-				local idHex = hex:sub(3, 8)
-				itemId = tonumber(idHex, 16)
-			end
+		if #links > 0 then
+			for _, linkInfo in ipairs(links) do
+				local itemId = nil
+				local hex = linkInfo.hex
+				if #hex >= 8 then
+					local idHex = hex:sub(3, 8)
+					itemId = tonumber(idHex, 16)
+				end
 
+				table.insert(state.auctionMonitor, 1, {
+					time = os.time(),
+					sender = sender,
+					item = linkInfo.name,
+					link = "\x12" .. hex .. linkInfo.name .. "\x12",
+					itemId = itemId,
+					status = "Not Checked"
+				})
+			end
+		else
+			-- If no links were found, log the plain text message to the table
 			table.insert(state.auctionMonitor, 1, {
 				time = os.time(),
 				sender = sender,
-				item = linkInfo.name,
-				link = "\x12" .. hex .. linkInfo.name .. "\x12",
-				itemId = itemId,
-				status = "Not Checked"
+				item = message,
+				link = nil,
+				itemId = nil,
+				status = "No Link"
 			})
 		end
 
