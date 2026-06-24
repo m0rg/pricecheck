@@ -348,7 +348,8 @@ local function processAuction(sender, message)
 				item = parsed.name,
 				link = parsed.link,
 				itemId = itemId,
-				status = "Not Checked"
+				status = "Not Checked",
+				raw = message
 			})
 		end
 

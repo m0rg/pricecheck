@@ -1113,10 +1113,10 @@ function ui.render(state)
 				ImGui.Spacing()
 				ImGui.SameLine()
 
-				-- Check if we have items that can be checked
+				-- Check if we have items in the monitor list
 				local hasItemsToCheck = false
 				for _, entry in ipairs(state.auctionMonitor) do
-					if entry.itemId and entry.itemId > 0 and entry.status ~= "Searching..." then
+					if entry.status ~= "Searching..." then
 						hasItemsToCheck = true
 						break
 					end
@@ -1130,9 +1130,13 @@ function ui.render(state)
 				if ImGui.Button("BULK CHECK##auc", 100, 20) and canBulkCheck then
 					local ids = {}
 					for _, entry in ipairs(state.auctionMonitor) do
-						if entry.itemId and entry.itemId > 0 and entry.status ~= "Searching..." then
-							table.insert(ids, entry.itemId)
+						if entry.status ~= "Searching..." then
 							entry.status = "Searching..."
+							if entry.itemId and entry.itemId > 0 then
+								table.insert(ids, entry.itemId)
+							else
+								queueSearch(state, entry.item)
+							end
 						end
 					end
 					if #ids > 0 then
@@ -1162,9 +1166,10 @@ function ui.render(state)
 					ImGuiTableFlags.ScrollY
 				)
 
-				if ImGui.BeginTable("AuctionMonitorTable", 4, aFlags, 0, 0) then
+				if ImGui.BeginTable("AuctionMonitorTable", 5, aFlags, 0, 0) then
 					ImGui.TableSetupColumn("Timestamp", ImGuiTableColumnFlags.WidthFixed, 75)
 					ImGui.TableSetupColumn("Vendor", ImGuiTableColumnFlags.WidthFixed, 90)
+					ImGui.TableSetupColumn("Msg", ImGuiTableColumnFlags.WidthFixed, 35)
 					ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
 					ImGui.TableSetupColumn("Median Price", ImGuiTableColumnFlags.WidthFixed, 100)
 					ImGui.TableHeadersRow()
@@ -1180,8 +1185,19 @@ function ui.render(state)
 						ImGui.TableSetColumnIndex(1)
 						ImGui.Text(entry.sender or "Unknown")
 
-						-- Column 2: Item Name
+						-- Column 2: Msg Icon
 						ImGui.TableSetColumnIndex(2)
+						ImGui.TextColored(0.7, 0.7, 0.7, 1.0, "[✉]")
+						if ImGui.IsItemHovered() then
+							ImGui.BeginTooltip()
+							ImGui.TextColored(0.4, 0.8, 1.0, 1.0, "Original Message:")
+							ImGui.Separator()
+							ImGui.TextWrapped(entry.raw or "No message recorded.")
+							ImGui.EndTooltip()
+						end
+
+						-- Column 3: Item Name
+						ImGui.TableSetColumnIndex(3)
 						ImGui.TextColored(0.4, 0.8, 1.0, 1.0, entry.item or "")
 						if entry.link and entry.link ~= "" then
 							if ImGui.IsItemHovered() then
@@ -1203,8 +1219,8 @@ function ui.render(state)
 							end
 						end
 
-						-- Column 3: Median Price
-						ImGui.TableSetColumnIndex(3)
+						-- Column 4: Median Price
+						ImGui.TableSetColumnIndex(4)
 						if entry.status == "Searching..." then
 							ImGui.TextColored(1.0, 0.8, 0.2, 1.0, entry.status)
 						elseif entry.status == "Success" then
@@ -1214,24 +1230,7 @@ function ui.render(state)
 								ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "No price found")
 							end
 						else
-							local isSearchingThis = false
-							for _, hEntry in ipairs(state.priceHistory) do
-								if hEntry.item:lower() == entry.item:lower() and hEntry.status == "Searching..." then
-									isSearchingThis = true
-									break
-								end
-							end
-
-							if isSearchingThis then
-								ImGui.TextColored(1.0, 0.8, 0.2, 1.0, "Searching...")
-							else
-								ImGui.TextDisabled("-")
-								ImGui.SameLine()
-								if ImGui.Button("+##auc_chk_" .. index, 25, 16) then
-									entry.status = "Searching..."
-									queueSearch(state, entry.item)
-								end
-							end
+							ImGui.TextColored(0.6, 0.6, 0.6, 1.0, "-")
 						end
 					end
 
