@@ -25,7 +25,6 @@ local defaultConfig = {
 	debounceMin = 400,
 	debounceMax = 600,
 	replyMessage = "Sure, near Parcel",
-	debugMode = false,
 }
 
 -- Helper functions for persisting configuration
@@ -156,8 +155,6 @@ state = {
 	priceHistory = loadedHistory,
 	config = loadedConfig,
 	receivedTells = {},
-	auctionMonitor = {},
-	recordAuctions = false,
 	activeDetailEntry = nil,
 	searchQueue = {},
 	broadcastQueue = {},
@@ -195,255 +192,7 @@ mq.event('TellEvent', '#1# tells you, \'#2#', function(line, sender, message)
 end)
 
 -- Helper function to clean and validate plain-text item names
-local function cleanAndValidateName(sub)
-	sub = sub:match("^%s*(.-)%s*$")
-	if sub == "" then return nil end
 
-	-- Ensure it starts with an alphanumeric character
-	if not sub:match("^%w") then
-		return nil
-	end
-
-	-- Strip leading command/verb words: wts, wtb, selling, sell, wtt, buy, buying
-	local lowerSub = sub:lower()
-	local clean = sub
-	local prefixes = { "wts%s+", "wtb%s+", "selling%s+", "sell%s+", "wtt%s+", "buy%s+", "buying%s+" }
-	for _, pref in ipairs(prefixes) do
-		local startIdx, endIdx = lowerSub:find("^" .. pref)
-		if startIdx then
-			clean = sub:sub(endIdx + 1)
-			lowerSub = clean:lower()
-			break
-		end
-	end
-
-	clean = clean:match("^%s*(.-)%s*$")
-
-	-- Strip trailing prices and common suffixes (e.g. 75, 9k, 1500p, 10kr, pst, obo)
-	clean = clean:gsub("%s+%d+%s*[kKpP]*%s*[lLrR]*%s*$", "")
-	clean = clean:gsub("%s+%d+%s*[kK]*[rR]*%s*$", "")
-	clean = clean:gsub("%s+%d+pp%s*$", "")
-	clean = clean:gsub("%s+%d+p%s*$", "")
-	clean = clean:gsub("%s+%d+kr%s*$", "")
-	clean = clean:gsub("%s+pst%s*$", "")
-	clean = clean:gsub("%s+obo%s*$", "")
-	clean = clean:gsub("%s+each%s*$", "")
-	clean = clean:gsub("%s+ea%s*$", "")
-
-	-- Strip trailing exclamation marks/spaces
-	clean = clean:gsub("[%s!]+$", "")
-	clean = clean:match("^%s*(.-)%s*$")
-
-	local lowerClean = clean:lower()
-
-	-- Strict blocklist to filter out non-items
-	local blocklist = {
-		"loot", "rights", "fight", "help", "bags", "items", "plat", "service",
-		"level", "port", "taxi", "buff", "mob", "clear", "guild", "recruit",
-		"track", "powerlevel", "pl ", " pl", "mobs", "send tell", "tell", "pm ",
-		"pm me", "msg", "price", "offer", "trade", "sell", "buy ", " buying", "wtt",
-		"deliver", "parcel", "bazaar", "barter", "tunnel", "ec ", "commonlands",
-		"c/o", "buyout", "minimum", " bid", "wts", "wtb"
-	}
-
-	for _, block in ipairs(blocklist) do
-		if lowerClean:find(block, 1, true) then
-			return nil
-		end
-	end
-
-	-- Reject colons unless it's a standard class/spell indicator (e.g. Spell: Song: Tome:)
-	if clean:find(":", 1, true) then
-		local prefix = clean:match("^([%a]+):")
-		if prefix then
-			local prefLower = prefix:lower()
-			if prefLower ~= "spell" and prefLower ~= "tome" and prefLower ~= "song" and prefLower ~= "scroll" and prefLower ~= "item" then
-				return nil
-			end
-		else
-			return nil
-		end
-	end
-
-	-- Item name must have a reasonable length (between 3 and 50 characters)
-	if #clean < 3 or #clean > 50 then
-		return nil
-	end
-
-	-- Reject if it's just numbers
-	if clean:match("^%d+$") then
-		return nil
-	end
-
-	return clean
-end
-
--- Helper function to split a single item link into hex and name safely without greedy name corruption
-local function parseSingleLink(eqLink)
-	if not eqLink then return nil, nil end
-	local content = eqLink:match("\x12([^\x12]+)\x12")
-	if not content then return nil, nil end
-
-	-- Check 54-char hex prefix (Live/TLP)
-	if #content > 54 then
-		local h = content:sub(1, 54)
-		if h:match("^%x+$") then
-			return h, content:sub(55)
-		end
-	end
-	-- Check 9-char hex prefix (classic/emulator)
-	if #content > 9 then
-		local h = content:sub(1, 9)
-		if h:match("^%x+$") then
-			return h, content:sub(10)
-		end
-	end
-	-- Check 8-char hex prefix (used in test cases)
-	if #content > 8 then
-		local h = content:sub(1, 8)
-		if h:match("^%x+$") then
-			return h, content:sub(9)
-		end
-	end
-	-- Fallback: greedy match
-	local h, n = content:match("^(%x+)(.*)$")
-	if h and h ~= "" then
-		return h, n
-	end
-	return nil, nil
-end
-
--- Helper function to extract both item links and plain-text item names from an auction message
-local function parseMessageItems(message)
-	local items = {}
-	if not message or message == "" then
-		return items
-	end
-
-	-- 1. Extract and process actual item links
-	local remaining = message
-	for content in string.gmatch(message, "\x12([^\x12]+)\x12") do
-		local fullLink = "\x12" .. content .. "\x12"
-		local hex, name = parseSingleLink(fullLink)
-		if hex and name then
-			table.insert(items, {
-				name = name,
-				link = fullLink,
-				hex = hex,
-				isLink = true
-			})
-			-- Remove the link from the remaining text to avoid duplicate parsing
-			remaining = remaining:gsub(fullLink, "")
-		end
-	end
-
-	-- 2. Parse remaining plain text for item names
-	-- Normalize delimiters: replace common delimiters with commas to simplify splitting
-	local text = remaining
-	text = text:gsub("%s+/%s+", ",")
-	text = text:gsub("%s+%+%s+", ",")
-	text = text:gsub("%s+or%s+", ",")
-	text = text:gsub("%s+and%s+", ",")
-	text = text:gsub("%s+-%s+", ",")
-	text = text:gsub("%s*%-%-%s*", ",")
-
-	for part in string.gmatch(text, "([^,;\n\r]+)") do
-		part = part:match("^%s*(.-)%s*$")
-		if part ~= "" then
-			local name = cleanAndValidateName(part)
-			if name then
-				-- Query MQ's LinkDB to see if it is a real item and can be upgraded
-				local eqLink = mq.TLO.LinkDB(string.format('=%s', name))()
-				if eqLink and eqLink ~= "" then
-					local hexStr, cleanName = parseSingleLink(eqLink)
-					if hexStr and cleanName then
-						table.insert(items, {
-							name = cleanName,
-							link = eqLink,
-							hex = hexStr,
-							isLink = true
-						})
-					else
-						table.insert(items, {
-							name = name,
-							link = nil,
-							hex = nil,
-							isLink = false
-						})
-					end
-				else
-					-- Not found in LinkDB, insert as plain text
-					table.insert(items, {
-						name = name,
-						link = nil,
-						hex = nil,
-						isLink = false
-					})
-				end
-			end
-		end
-	end
-
-	return items
-end
-
--- Register event listener for incoming auctions
-local function processAuction(sender, message)
-	if not state.config or not state.config.debugMode then
-		return
-	end
-
-	-- Print a debug message to the MQ console so the user can verify if the event triggers
-	print(string.format("[PriceCheck Debug] Auction event triggered: sender=%s, message=%s, recordAuctions=%s", tostring(sender), tostring(message), tostring(state.recordAuctions)))
-
-	if not state.recordAuctions then
-		return
-	end
-
-	if sender and message then
-		-- Clean up leading/trailing single quotes if present
-		if message:sub(1, 1) == "'" then
-			message = message:sub(2)
-		end
-		if message:sub(-1) == "'" then
-			message = message:sub(1, -2)
-		end
-
-		-- Parse both links and plain-text item names from the message
-		local parsedItems = parseMessageItems(message)
-		for _, parsed in ipairs(parsedItems) do
-			local itemId = nil
-			if parsed.hex and #parsed.hex >= 8 then
-				local idHex = parsed.hex:sub(3, 8)
-				itemId = tonumber(idHex, 16)
-			end
-
-			table.insert(state.auctionMonitor, 1, {
-				time = os.time(),
-				sender = sender,
-				item = parsed.name,
-				link = parsed.link,
-				itemId = itemId,
-				status = "Not Checked",
-				raw = message
-			})
-		end
-
-		-- Limit to last 100 entries to prevent infinite memory growth
-		while #state.auctionMonitor > 100 do
-			table.remove(state.auctionMonitor)
-		end
-	end
-end
-
-mq.event('AuctionEvent1', '#1# auctions, #2#', function(line, sender, message)
-	processAuction(sender, message)
-end)
-
-mq.event('AuctionEvent2', 'You auction, #1#', function(line, message)
-	local myName = mq.TLO.Me.CleanName() or "You"
-	processAuction(myName, message)
-end)
 
 -- Register the ImGui render loop callback with the shared state
 mq.imgui.init("PriceCheckWindow", function()
@@ -473,18 +222,7 @@ while state.openGUI do
 				completedEntry.listedPrice = listedPrice
 			end
 
-			-- Update matching entries in the auction monitor
-			for _, aucEntry in ipairs(state.auctionMonitor) do
-				if aucEntry.item:lower() == completedEntry.item:lower() then
-					if success and completedEntry.data then
-						aucEntry.medianPrice = completedEntry.listedPrice
-						aucEntry.hasData = true
-						aucEntry.status = "Success"
-					else
-						aucEntry.status = "Failed"
-					end
-				end
-			end
+
 
 			saveHistory()
 		end)
@@ -492,11 +230,7 @@ while state.openGUI do
 		if not ok or not callbackCalled then
 			state.isSearching = false
 			entry.status = "Error"
-			for _, aucEntry in ipairs(state.auctionMonitor) do
-				if aucEntry.item:lower() == entry.item:lower() then
-					aucEntry.status = "Error"
-				end
-			end
+
 			saveHistory()
 		end
 	elseif #state.bulkQueue > 0 then
@@ -533,14 +267,7 @@ while state.openGUI do
 							})
 						end
 
-						-- Update auctionMonitor entries
-						for _, entry in ipairs(state.auctionMonitor) do
-							if entry.itemId == resItem.itemId then
-								entry.medianPrice = resItem.medianPlatPrice
-								entry.hasData = resItem.hasData
-								entry.status = "Success"
-							end
-						end
+
 					end
 				end
 				-- Update status for any items that were in this batch but had no data returned
@@ -551,12 +278,7 @@ while state.openGUI do
 							existing.hasData = false
 						end
 					end
-					for _, entry in ipairs(state.auctionMonitor) do
-						if entry.itemId == itemId and entry.status == "Searching..." then
-							entry.status = "Success"
-							entry.hasData = false
-						end
-					end
+
 				end
 			else
 				-- Set error status for all items in the batch if request failed
@@ -566,11 +288,7 @@ while state.openGUI do
 							existing.status = errMsg or "Error"
 						end
 					end
-					for _, entry in ipairs(state.auctionMonitor) do
-						if entry.itemId == itemId and entry.status == "Searching..." then
-							entry.status = errMsg or "Error"
-						end
-					end
+
 				end
 			end
 			state.isBulkSearching = false
@@ -584,11 +302,7 @@ while state.openGUI do
 						existing.status = "Error"
 					end
 				end
-				for _, entry in ipairs(state.auctionMonitor) do
-					if entry.itemId == itemId and entry.status == "Searching..." then
-						entry.status = "Error"
-					end
-				end
+
 			end
 		end
 		mq.delay(100)
