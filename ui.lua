@@ -497,7 +497,7 @@ function ui.render(state)
 				)
 
 				if ImGui.BeginTable("HistoryTable", 10, flags, 0, 0) then
-					ImGui.TableSetupColumn("Sel", ImGuiTableColumnFlags.WidthFixed, 30)
+					ImGui.TableSetupColumn("Sel/Rem", ImGuiTableColumnFlags.WidthFixed, 55)
 					ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
 					ImGui.TableSetupColumn("Qty (Bank)", ImGuiTableColumnFlags.WidthFixed, 70)
 					ImGui.TableSetupColumn("Avg Sell", ImGuiTableColumnFlags.WidthFixed, 75)
@@ -573,7 +573,7 @@ function ui.render(state)
 					for index, entry in ipairs(state.priceHistory) do
 						ImGui.TableNextRow()
 
-						-- Column 0: Selected Checkbox
+						-- Column 0: Selected Checkbox & Remove Button
 						ImGui.TableSetColumnIndex(0)
 						if entry.status == "Success" then
 							local val, changed = ImGui.Checkbox("##sel_" .. entry.id, entry.selected)
@@ -581,9 +581,20 @@ function ui.render(state)
 							if changed then
 								state.saveRequested = true
 							end
+							ImGui.SameLine()
 						else
 							ImGui.Text("-")
+							ImGui.SameLine()
 						end
+
+						-- Draw the red remove button (X)
+						ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.1, 0.1, 1.0)
+						ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.8, 0.2, 0.2, 1.0)
+						ImGui.PushStyleColor(ImGuiCol.ButtonActive, 1.0, 0.3, 0.3, 1.0)
+						if ImGui.Button("X##rem_" .. entry.id, 18, 18) then
+							state.itemIndexToRemove = index
+						end
+						ImGui.PopStyleColor(3)
 
 						-- Column 1: Item Name
 						ImGui.TableSetColumnIndex(1)
@@ -687,6 +698,23 @@ function ui.render(state)
 							ImGui.Text("-")
 						end
 					end
+
+					if state.itemIndexToRemove then
+						local entry = state.priceHistory[state.itemIndexToRemove]
+						if state.activeDetailEntry == entry then
+							state.activeDetailEntry = nil
+						end
+						for sqIdx, sqEntry in ipairs(state.searchQueue) do
+							if sqEntry == entry then
+								table.remove(state.searchQueue, sqIdx)
+								break
+							end
+						end
+						table.remove(state.priceHistory, state.itemIndexToRemove)
+						state.itemIndexToRemove = nil
+						state.saveRequested = true
+					end
+
 					ImGui.EndTable()
 				end
 
@@ -900,6 +928,103 @@ function ui.render(state)
 				ImGui.EndTabItem()
 			end
 
+			if ImGui.BeginTabItem("Tells") then
+				ImGui.TextColored(0.4, 0.8, 1.0, 1.0, "Tells Received Log:")
+				ImGui.Separator()
+				ImGui.Spacing()
+
+				-- Add inline configuration for reply message
+				ImGui.AlignTextToFramePadding()
+				ImGui.Text("Quick Reply Msg:")
+				ImGui.SameLine()
+				ImGui.PushItemWidth(-1)
+				local valReply, changedReply = ImGui.InputText("##quick_reply_msg", state.config.replyMessage or "Sure, near Parcel")
+				state.config.replyMessage = valReply
+				if changedReply then
+					state.configSaveRequested = true
+				end
+				ImGui.PopItemWidth()
+
+				ImGui.Spacing()
+
+				local tellFlags = bit32.bor(
+					ImGuiTableFlags.Borders,
+					ImGuiTableFlags.RowBg,
+					ImGuiTableFlags.Resizable,
+					ImGuiTableFlags.ScrollY
+				)
+
+				if ImGui.BeginTable("TellsTable", 3, tellFlags, 0, 0) then
+					ImGui.TableSetupColumn("From", ImGuiTableColumnFlags.WidthFixed, 90)
+					ImGui.TableSetupColumn("Message", ImGuiTableColumnFlags.WidthStretch)
+					ImGui.TableSetupColumn("Operations", ImGuiTableColumnFlags.WidthFixed, 85)
+					ImGui.TableHeadersRow()
+
+					for index, tell in ipairs(state.receivedTells) do
+						ImGui.TableNextRow()
+
+						-- Column 0: From
+						ImGui.TableSetColumnIndex(0)
+						ImGui.Text(tell.sender or "Unknown")
+
+						-- Column 1: Message
+						ImGui.TableSetColumnIndex(1)
+						ImGui.TextWrapped(tell.message or "")
+
+						-- Highlight listed items matched in the message
+						local msgLower = (tell.message or ""):lower()
+						local matched = {}
+						local totalPrice = 0
+						for _, entry in ipairs(state.priceHistory) do
+							if entry.selected and entry.status == "Success" then
+								local itemName = (entry.data and entry.data.item) or entry.item
+								if itemName and itemName ~= "" then
+									if string.find(msgLower, itemName:lower(), 1, true) then
+										local price = entry.listedPrice or 0
+										table.insert(matched, string.format("\"%s\" for %d pp", itemName, price))
+										totalPrice = totalPrice + price
+									end
+								end
+							end
+						end
+						if #matched > 0 then
+							ImGui.PushStyleColor(ImGuiCol.Text, 0.4, 1.0, 0.4, 1.0)
+							ImGui.TextWrapped(string.format(" (interested in %s, expect a total of %d pp in the Trade Window!)", table.concat(matched, ", "), totalPrice))
+							ImGui.PopStyleColor()
+						end
+
+						-- Column 2: Operations
+						ImGui.TableSetColumnIndex(2)
+
+						-- Done/Check button
+						ImGui.PushStyleColor(ImGuiCol.Button, 0.1, 0.5, 0.1, 1.0)
+						ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.7, 0.2, 1.0)
+						ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.3, 0.9, 0.3, 1.0)
+						if ImGui.Button("V##done_" .. index, 30, 18) then
+							state.tellIndexToRemove = index
+						end
+						ImGui.PopStyleColor(3)
+
+						ImGui.SameLine()
+
+						-- Reply button
+						if ImGui.Button("Reply##rep_" .. index, 42, 18) then
+							local replyCmd = string.format("/tell %s %s", tell.sender or "Unknown", state.config.replyMessage or "Sure, near Parcel")
+							mq.cmd(replyCmd)
+						end
+					end
+
+					if state.tellIndexToRemove then
+						table.remove(state.receivedTells, state.tellIndexToRemove)
+						state.tellIndexToRemove = nil
+					end
+
+					ImGui.EndTable()
+				end
+
+				ImGui.EndTabItem()
+			end
+
 			-- Configuration Tab (Colored Green)
 			ImGui.PushStyleColor(ImGuiCol.Tab, 0.1, 0.4, 0.1, 0.8)
 			ImGui.PushStyleColor(ImGuiCol.TabHovered, 0.2, 0.6, 0.2, 0.8)
@@ -952,6 +1077,18 @@ function ui.render(state)
 				end
 				state.config.debounceMax = valMax
 				if changedMax then
+					state.configSaveRequested = true
+				end
+				ImGui.PopItemWidth()
+
+				ImGui.Spacing()
+				ImGui.Text("Default Reply Message:")
+				ImGui.PushItemWidth(-1)
+				local valReply, changedReply = ImGui.InputText("##default_reply_msg", state.config.replyMessage or "Sure, near Parcel")
+				if valReply ~= "" then
+					state.config.replyMessage = valReply
+				end
+				if changedReply then
 					state.configSaveRequested = true
 				end
 				ImGui.PopItemWidth()

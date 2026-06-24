@@ -24,6 +24,7 @@ local defaultConfig = {
 	lowSampleSize = 5,
 	debounceMin = 400,
 	debounceMax = 600,
+	replyMessage = "Sure, near Parcel",
 }
 
 -- Helper functions for persisting configuration
@@ -150,6 +151,7 @@ state = {
 	broadcastCommand = "/auction",
 	priceHistory = loadedHistory,
 	config = loadedConfig,
+	receivedTells = {},
 	activeDetailEntry = nil,
 	searchQueue = {},
 	broadcastQueue = {},
@@ -164,6 +166,17 @@ state = {
 saveHistory()
 saveConfig()
 
+-- Register event listener for incoming tells
+mq.event('TellEvent', '#1# tells you, \'#2#\'', function(line, sender, message)
+	if sender and message then
+		table.insert(state.receivedTells, {
+			sender = sender,
+			message = message,
+			time = os.time(),
+		})
+	end
+end)
+
 -- Register the ImGui render loop callback with the shared state
 mq.imgui.init("PriceCheckWindow", function()
 	ui.render(state)
@@ -171,6 +184,7 @@ end)
 
 -- Main script loop (running in the safe script coroutine thread)
 while state.openGUI do
+	mq.doevents()
 	if #state.searchQueue > 0 and not state.isSearching then
 		local entry = table.remove(state.searchQueue, 1)
 		state.isSearching = true
