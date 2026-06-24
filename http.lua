@@ -34,8 +34,10 @@ function http.performSearch(itemName, onComplete)
 	end
 
 	local encodedName = http.urlEncode(itemName)
+	local serverName = (mq.TLO.EverQuest.Server and mq.TLO.EverQuest.Server()) or "Frostreaver"
 	local url = string.format(
-		"https://tlp-auctions.com/api/prices/pricecheck?serverName=Frostreaver&searchTerm=%s",
+		"https://tlp-auctions.com/api/prices/pricecheck?serverName=%s&searchTerm=%s",
+		http.urlEncode(serverName),
 		encodedName
 	)
 
@@ -92,7 +94,7 @@ function http.performBulkSearch(itemIds, onComplete)
 	local aggregatedItems = {}
 	local kronoRate = nil
 	local lastUpdated = nil
-	local serverName = "Frostreaver"
+	local serverName = (mq.TLO.EverQuest.Server and mq.TLO.EverQuest.Server()) or "Frostreaver"
 	local lastError = nil
 
 	-- Process itemIds in chunks of 10
