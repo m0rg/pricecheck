@@ -46,4 +46,37 @@ function char.getItemCounts(itemName)
 	return count, bankCount
 end
 
+-- Returns the database link for an item by name
+function char.getItemLink(itemName)
+	if not itemName or itemName == "" then
+		return nil
+	end
+	local eqLink = mq.TLO.LinkDB(string.format('=%s', itemName))()
+	if eqLink and eqLink ~= "" then
+		return eqLink
+	end
+	return nil
+end
+
+-- Returns the name of the item currently held on the cursor
+function char.getCursorItemName()
+	local cursorItem = mq.TLO.Cursor
+	if cursorItem and cursorItem() then
+		return cursorItem.Name()
+	end
+	return nil
+end
+
+-- Returns the vendor value (in copper) of an item by name
+function char.getItemValue(itemName)
+	if not itemName or itemName == "" then
+		return 0
+	end
+	local itemObj = mq.TLO.FindItem(string.format('=%s', itemName))
+	if itemObj and itemObj() then
+		return itemObj.Value() or 0
+	end
+	return 0
+end
+
 return char

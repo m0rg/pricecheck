@@ -1,4 +1,3 @@
-local mq = require("mq")
 local ImGui = require("ImGui")
 
 local ui = {}
@@ -63,11 +62,13 @@ end
 
 local char
 local dto
+local chat
 
--- Injects character and data transfer dependencies (SRP)
-function ui.setup(charModule, dtoModule)
+-- Injects character, data transfer, and chat dependencies (SRP)
+function ui.setup(charModule, dtoModule, chatModule)
 	char = charModule
 	dto = dtoModule
+	chat = chatModule
 end
 
 
@@ -150,8 +151,8 @@ local function generateItemSegments(state, useLinks)
 
 			local itemIdentifier = itemName
 			if useLinks then
-				local eqLink = mq.TLO.LinkDB(string.format('=%s', itemName))()
-				if eqLink and eqLink ~= "" then
+				local eqLink = char.getItemLink(itemName)
+				if eqLink then
 					itemIdentifier = eqLink
 				end
 			end
@@ -288,16 +289,16 @@ function ui.render(state)
 	local open, shouldDraw = ImGui.Begin("Frostreaver Trade Tools", state.openGUI)
 	state.openGUI = open
 	if shouldDraw then
-		local cursorItem = mq.TLO.Cursor
+		local cursorItemName = char.getCursorItemName()
 
 		-- ----------------------------------------------------
 		-- SECTION 1: Item Drop Slot
 		-- ----------------------------------------------------
 		ImGui.Text("Item Drop Slot:")
-		if cursorItem() then
+		if cursorItemName then
 			local canSearch = true
 			for _, entry in ipairs(state.priceHistory) do
-				if entry.item:lower() == cursorItem.Name():lower() and entry.status == "Searching..." then
+				if entry.item:lower() == cursorItemName:lower() and entry.status == "Searching..." then
 					canSearch = false
 					break
 				end
@@ -306,8 +307,8 @@ function ui.render(state)
 				ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
 			end
 			ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.6, 0.2, 1.0)
-			if ImGui.Button(string.format("Click to Check: %s", cursorItem.Name()), -1, 40) and canSearch then
-				queueSearch(state, cursorItem.Name())
+			if ImGui.Button(string.format("Click to Check: %s", cursorItemName), -1, 40) and canSearch then
+				queueSearch(state, cursorItemName)
 			end
 			ImGui.PopStyleColor()
 			if not canSearch then
@@ -409,19 +410,8 @@ function ui.render(state)
 									valA = (a.status == "Success" and a.hasData and a.medianPlatPrice) or -1
 									valB = (b.status == "Success" and b.hasData and b.medianPlatPrice) or -1
 								elseif spec.ColumnIndex == 2 then
-									local itemObjA = mq.TLO.FindItem(string.format('=%s', a.item))
-									local valObjA = 0
-									if itemObjA and itemObjA() then
-										valObjA = itemObjA.Value() or 0
-									end
-									valA = valObjA
-
-									local itemObjB = mq.TLO.FindItem(string.format('=%s', b.item))
-									local valObjB = 0
-									if itemObjB and itemObjB() then
-										valObjB = itemObjB.Value() or 0
-									end
-									valB = valObjB
+									valA = char.getItemValue(a.item)
+									valB = char.getItemValue(b.item)
 								else
 									return false
 								end
@@ -440,11 +430,7 @@ function ui.render(state)
 						ImGui.TableNextRow()
 
 						-- Pre-calculate vendor sell price and check if it is higher/equal to market median price
-						local itemObj = mq.TLO.FindItem(string.format('=%s', entry.item))
-						local vValue = 0
-						if itemObj and itemObj() then
-							vValue = itemObj.Value() or 0
-						end
+						local vValue = char.getItemValue(entry.item)
 
 						local isVendorBetter = false
 						if entry.status == "Success" and entry.hasData and entry.medianPlatPrice then
@@ -499,7 +485,7 @@ function ui.render(state)
 						ImGui.TableSetColumnIndex(3)
 						if isVendorBetter then
 							if ImGui.Button("SetItem##" .. index, -1, 18) then
-								mq.cmd(string.format('/setitem sell "%s"', entry.item))
+								chat.executeCommand(string.format('/setitem sell "%s"', entry.item))
 							end
 						elseif entry.status == "Success" and entry.hasData and entry.medianPlatPrice then
 							local isSearchingThis = false
@@ -921,7 +907,7 @@ function ui.render(state)
 						-- Reply button
 						if ImGui.Button("Reply##rep_" .. index, 42, 18) then
 							local replyCmd = string.format("/tell %s %s", tell.sender or "Unknown", state.config.replyMessage or "Sure, near Parcel")
-							mq.cmd(replyCmd)
+							chat.executeCommand(replyCmd)
 						end
 					end
 

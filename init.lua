@@ -22,7 +22,7 @@ local dto = require(myPath .. "dto")
 local chat = require(myPath .. "chat")
 
 -- Initialize UI and Chat modules with dependencies (SRP / DI)
-ui.setup(char, dto)
+ui.setup(char, dto, chat)
 chat.setup(dto)
 
 local state

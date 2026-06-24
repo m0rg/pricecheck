@@ -45,4 +45,11 @@ function chat.processBroadcastQueue(state)
 	return false
 end
 
+-- Executes an arbitrary MacroQuest command immediately
+function chat.executeCommand(commandLine)
+	if commandLine and commandLine ~= "" then
+		mq.cmd(commandLine)
+	end
+end
+
 return chat
