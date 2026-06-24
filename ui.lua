@@ -222,7 +222,7 @@ local function generateItemSegments(state, useLinks)
 	local segments = {}
 
 	for _, entry in ipairs(state.priceHistory) do
-		if entry.selected and entry.status == "Success" then
+		if entry.status == "Success" then
 			local itemName = (entry.data and entry.data.item) or entry.item
 			local listedPrice = entry.listedPrice or 0
 
@@ -310,7 +310,6 @@ local function queueSearch(state, itemName)
 			item = itemName,
 			data = nil,
 			status = "Searching...",
-			selected = false,
 		}
 		table.insert(state.priceHistory, 1, entry)
 		table.insert(state.searchQueue, entry)
@@ -318,104 +317,54 @@ local function queueSearch(state, itemName)
 	end
 end
 
--- Helper window loop to display comprehensive historical details
-local function renderDetailsModal(state)
-	if not state.activeDetailEntry or not state.activeDetailEntry.data then
-		return
-	end
+-- Helper function to render detailed log data inside an ImGui tooltip on hover
+local function renderDetailsTooltip(entry)
+	if not entry or not entry.data then return end
+	local data = entry.data
 
-	local data = state.activeDetailEntry.data
-	-- Widened default window width slightly to cleanly present the 4-column sub-tables
-	ImGui.SetNextWindowSize(460, 360, ImGuiCond.FirstUseEver)
+	ImGui.BeginTooltip()
+	ImGui.TextColored(0.4, 0.8, 1.0, 1.0, string.format("Market Details: %s", data.item or "Unknown"))
+	ImGui.Separator()
+	ImGui.Text(string.format("Sellers Avg: %.1f pp (Samples: %d)", data.sellAverage or 0, data.sellSampleSize or 0))
+	ImGui.Text(string.format("Buyers Avg: %.1f pp (Samples: %d)", data.buyAverage or 0, data.buySampleSize or 0))
+	ImGui.Spacing()
 
-	local open, shouldDraw = ImGui.Begin(string.format("Market Details: %s", data.item or "Unknown"), true)
-	if not open then
-		state.activeDetailEntry = nil
-		ImGui.End()
-		return
-	end
-
-	if shouldDraw then
-		ImGui.TextColored(0.4, 0.8, 1.0, 1.0, "Summary Analytics:")
-		ImGui.Separator()
-		ImGui.Text(string.format("Sellers Avg: %.1f pp (Samples: %d)", data.sellAverage or 0, data.sellSampleSize or 0))
-		ImGui.Text(string.format("Buyers Avg: %.1f pp (Samples: %d)", data.buyAverage or 0, data.buySampleSize or 0))
-		ImGui.Spacing()
-
-		-- Render historical log data with relative times added
-		local function drawLogTable(title, logArray)
-			ImGui.TextColored(0.4, 1.0, 0.4, 1.0, title)
-			if not logArray or #logArray == 0 then
-				ImGui.TextDisabled("   No recent transactions recorded.")
-				return
-			end
-
-			-- Incremented column count from 3 to 4 to host the relative timer column
-			local tFlags = bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.RowBg, ImGuiTableFlags.ScrollY, ImGuiTableFlags.Sortable)
-			if ImGui.BeginTable(title .. "Table", 4, tFlags, 0, 105) then
-				ImGui.TableSetupColumn("Trader", ImGuiTableColumnFlags.WidthStretch)
-				ImGui.TableSetupColumn("Plat", ImGuiTableColumnFlags.WidthFixed, 55)
-				ImGui.TableSetupColumn("Krono", ImGuiTableColumnFlags.WidthFixed, 45)
-				ImGui.TableSetupColumn("Age", ImGuiTableColumnFlags.WidthFixed, 75) -- Time Column
-				ImGui.TableHeadersRow()
-
-				local sortSpecs = ImGui.TableGetSortSpecs()
-				if sortSpecs and sortSpecs.SpecsDirty then
-					local spec = sortSpecs:Specs(1)
-					if spec then
-						table.sort(logArray, function(a, b)
-							local valA, valB
-
-							if spec.ColumnIndex == 0 then
-								valA = (a.auctioneer or ""):lower()
-								valB = (b.auctioneer or ""):lower()
-							elseif spec.ColumnIndex == 1 then
-								valA = a.platPrice or 0
-								valB = b.platPrice or 0
-							elseif spec.ColumnIndex == 2 then
-								valA = a.kronoPrice or 0
-								valB = b.kronoPrice or 0
-							elseif spec.ColumnIndex == 3 then
-								valA = parseISOTimestamp(a.datetime) or 0
-								valB = parseISOTimestamp(b.datetime) or 0
-							else
-								return false
-							end
-
-							if spec.SortDirection == ImGuiSortDirection.Ascending then
-								return valA < valB
-							else
-								return valA > valB
-							end
-						end)
-					end
-					sortSpecs.SpecsDirty = false
-				end
-
-				for _, log in ipairs(logArray) do
-					ImGui.TableNextRow()
-					ImGui.TableSetColumnIndex(0)
-					ImGui.Text(log.auctioneer or "Unknown")
-					ImGui.TableSetColumnIndex(1)
-					ImGui.Text(tostring(math.floor(log.platPrice or 0)))
-					ImGui.TableSetColumnIndex(2)
-					ImGui.Text(tostring(log.kronoPrice or 0))
-
-					ImGui.TableSetColumnIndex(3)
-					-- Pull dynamic localized relative time label string
-					local ageString = getRelativeTimeString(log.datetime)
-					ImGui.TextColored(0.7, 0.7, 0.7, 1.0, ageString)
-				end
-				ImGui.EndTable()
-			end
+	local function drawCompactTable(title, logArray)
+		ImGui.TextColored(0.4, 1.0, 0.4, 1.0, title)
+		if not logArray or #logArray == 0 then
+			ImGui.TextDisabled("   No recent transactions recorded.")
+			return
 		end
 
-		drawLogTable("Recent Sell Offers (WTS)", data.recentSellSales)
-		ImGui.Spacing()
-		drawLogTable("Recent Buy Offers (WTB)", data.recentBuySales)
+		local tFlags = bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.RowBg)
+		if ImGui.BeginTable(title .. "TooltipTable", 4, tFlags, 0, 0) then
+			ImGui.TableSetupColumn("Trader", ImGuiTableColumnFlags.WidthStretch)
+			ImGui.TableSetupColumn("Plat", ImGuiTableColumnFlags.WidthFixed, 55)
+			ImGui.TableSetupColumn("Krono", ImGuiTableColumnFlags.WidthFixed, 45)
+			ImGui.TableSetupColumn("Age", ImGuiTableColumnFlags.WidthFixed, 75)
+			ImGui.TableHeadersRow()
+
+			local limit = math.min(#logArray, 5)
+			for i = 1, limit do
+				local log = logArray[i]
+				ImGui.TableNextRow()
+				ImGui.TableSetColumnIndex(0)
+				ImGui.Text(log.auctioneer or "Unknown")
+				ImGui.TableSetColumnIndex(1)
+				ImGui.Text(tostring(math.floor(log.platPrice or 0)))
+				ImGui.TableSetColumnIndex(2)
+				ImGui.Text(tostring(log.kronoPrice or 0))
+				ImGui.TableSetColumnIndex(3)
+				ImGui.TextColored(0.7, 0.7, 0.7, 1.0, getRelativeTimeString(log.datetime))
+			end
+			ImGui.EndTable()
+		end
 	end
 
-	ImGui.End()
+	drawCompactTable("Recent Sell Offers (WTS)", data.recentSellSales)
+	ImGui.Spacing()
+	drawCompactTable("Recent Buy Offers (WTB)", data.recentBuySales)
+	ImGui.EndTooltip()
 end
 
 -- ImGui Render Loop
@@ -475,16 +424,16 @@ function ui.render(state)
 				local previewLines = getAuctionLines(state, false)
 				local previewText = table.concat(previewLines, "\n")
 				if previewText == "" then
-					previewText = "No items selected or no valid prices available."
+					previewText = "No items or no valid prices available."
 				end
 
 				ImGui.PushStyleColor(ImGuiCol.FrameBg, 0.15, 0.15, 0.15, 1.0)
 				ImGui.InputTextMultiline("##salesString", previewText, -1, 60, ImGuiInputTextFlags.ReadOnly)
 				ImGui.PopStyleColor()
 
-				local hasItemsSelected = (#previewLines > 0)
+				local hasItemsToBroadcast = (#previewLines > 0)
 				local isBroadcasting = (#state.broadcastQueue > 0)
-				local canBroadcast = hasItemsSelected and not isBroadcasting
+				local canBroadcast = hasItemsToBroadcast and not isBroadcasting
 
 				if not canBroadcast then
 					ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
@@ -560,7 +509,7 @@ function ui.render(state)
 				)
 
 				if ImGui.BeginTable("HistoryTable", 10, flags, 0, 0) then
-					ImGui.TableSetupColumn("Sel/Rem", ImGuiTableColumnFlags.WidthFixed, 55)
+					ImGui.TableSetupColumn("Rem", bit32.bor(ImGuiTableColumnFlags.WidthFixed, ImGuiTableColumnFlags.NoSort), 30)
 					ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
 					ImGui.TableSetupColumn("Qty (Bank)", ImGuiTableColumnFlags.WidthFixed, 70)
 					ImGui.TableSetupColumn("Avg Sell", ImGuiTableColumnFlags.WidthFixed, 75)
@@ -580,8 +529,8 @@ function ui.render(state)
 								local valA, valB
 
 								if spec.ColumnIndex == 0 then
-									valA = a.selected and 1 or 0
-									valB = b.selected and 1 or 0
+									valA = 0
+									valB = 0
 								elseif spec.ColumnIndex == 1 then
 									valA = (a.data and a.data.item) or a.item
 									valB = (b.data and b.data.item) or b.item
@@ -636,19 +585,8 @@ function ui.render(state)
 					for index, entry in ipairs(state.priceHistory) do
 						ImGui.TableNextRow()
 
-						-- Column 0: Selected Checkbox & Remove Button
+						-- Column 0: Remove Button
 						ImGui.TableSetColumnIndex(0)
-						if entry.status == "Success" then
-							local val, changed = ImGui.Checkbox("##sel_" .. entry.id, entry.selected)
-							entry.selected = val
-							if changed then
-								state.saveRequested = true
-							end
-							ImGui.SameLine()
-						else
-							ImGui.Text("-")
-							ImGui.SameLine()
-						end
 
 						-- Draw the red remove button (X)
 						ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.1, 0.1, 1.0)
@@ -751,11 +689,12 @@ function ui.render(state)
 							ImGui.Text("-")
 						end
 
-						-- Column 9: Details button
+						-- Column 9: Details on hover
 						ImGui.TableSetColumnIndex(9)
 						if entry.status == "Success" then
-							if ImGui.Button("View##" .. entry.id, -1, 18) then
-								state.activeDetailEntry = entry
+							ImGui.TextColored(0.4, 0.8, 1.0, 1.0, "Hover")
+							if ImGui.IsItemHovered() then
+								renderDetailsTooltip(entry)
 							end
 						else
 							ImGui.Text("-")
@@ -1048,7 +987,7 @@ function ui.render(state)
 						local matched = {}
 						local totalPrice = 0
 						for _, entry in ipairs(state.priceHistory) do
-							if entry.selected and entry.status == "Success" then
+							if entry.status == "Success" then
 								local itemName = (entry.data and entry.data.item) or entry.item
 								if itemName and itemName ~= "" then
 									if string.find(msgLower, itemName:lower(), 1, true) then
@@ -1314,10 +1253,6 @@ function ui.render(state)
 			end
 
 			ImGui.EndTabBar()
-		end
-
-		if state.activeDetailEntry then
-			renderDetailsModal(state)
 		end
 	end
 	ImGui.End()
