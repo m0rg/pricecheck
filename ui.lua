@@ -1183,13 +1183,24 @@ function ui.render(state)
 						-- Column 2: Item Name
 						ImGui.TableSetColumnIndex(2)
 						ImGui.TextColored(0.4, 0.8, 1.0, 1.0, entry.item or "")
-						if ImGui.IsItemHovered() then
-							ImGui.BeginTooltip()
-							ImGui.Text("Click to copy EverQuest item link to clipboard")
-							ImGui.EndTooltip()
-						end
-						if ImGui.IsItemClicked() then
-							ImGui.SetClipboardText(entry.link or "")
+						if entry.link and entry.link ~= "" then
+							if ImGui.IsItemHovered() then
+								ImGui.BeginTooltip()
+								ImGui.Text("Click to copy EverQuest item link to clipboard")
+								ImGui.EndTooltip()
+							end
+							if ImGui.IsItemClicked() then
+								ImGui.SetClipboardText(entry.link)
+							end
+						else
+							if ImGui.IsItemHovered() then
+								ImGui.BeginTooltip()
+								ImGui.Text("Click to copy item name to clipboard")
+								ImGui.EndTooltip()
+							end
+							if ImGui.IsItemClicked() then
+								ImGui.SetClipboardText(entry.item or "")
+							end
 						end
 
 						-- Column 3: Median Price
@@ -1203,7 +1214,24 @@ function ui.render(state)
 								ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "No price found")
 							end
 						else
-							ImGui.TextColored(0.6, 0.6, 0.6, 1.0, "-")
+							local isSearchingThis = false
+							for _, hEntry in ipairs(state.priceHistory) do
+								if hEntry.item:lower() == entry.item:lower() and hEntry.status == "Searching..." then
+									isSearchingThis = true
+									break
+								end
+							end
+
+							if isSearchingThis then
+								ImGui.TextColored(1.0, 0.8, 0.2, 1.0, "Searching...")
+							else
+								ImGui.TextDisabled("-")
+								ImGui.SameLine()
+								if ImGui.Button("+##auc_chk_" .. index, 25, 16) then
+									entry.status = "Searching..."
+									queueSearch(state, entry.item)
+								end
+							end
 						end
 					end
 

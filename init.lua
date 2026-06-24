@@ -193,12 +193,15 @@ mq.event('TellEvent', '#1# tells you, \'#2#', function(line, sender, message)
 	end
 end)
 
--- Helper function to extract item links from an auction message
-local function extractLinks(message)
-	local links = {}
-	if not message then return links end
+-- Helper function to extract both item links and plain-text item names from an auction message
+local function parseMessageItems(message)
+	local items = {}
+	if not message or message == "" then
+		return items
+	end
 
-	-- Find all segments enclosed by \x12
+	-- 1. Extract and process actual item links
+	local remaining = message
 	for content in string.gmatch(message, "\x12([^\x12]+)\x12") do
 		local hex, name = nil, nil
 		-- Check 54-char hex prefix (Live/TLP)
@@ -225,7 +228,7 @@ local function extractLinks(message)
 				name = content:sub(9)
 			end
 		end
-		-- Fallback: greedily match hex prefix
+		-- Fallback
 		if not hex then
 			local h, n = content:match("^(%x+)(.*)$")
 			if h and h ~= "" then
@@ -235,10 +238,81 @@ local function extractLinks(message)
 		end
 
 		if hex and name and name ~= "" then
-			table.insert(links, { hex = hex, name = name })
+			table.insert(items, {
+				name = name,
+				link = "\x12" .. hex .. name .. "\x12",
+				hex = hex,
+				isLink = true
+			})
+			-- Remove the link from the remaining text to avoid duplicate parsing
+			remaining = remaining:gsub("\x12" .. hex .. name .. "\x12", "")
 		end
 	end
-	return links
+
+	-- 2. Parse remaining plain text for item names
+	-- Split by comma, semicolon, or newlines
+	for part in string.gmatch(remaining, "([^,;\n\r]+)") do
+		part = part:match("^%s*(.-)%s*$")
+		
+		-- Further split by " - " (hyphen with spaces) if present
+		local subParts = {}
+		if string.find(part, " - ", 1, true) then
+			for sub in string.gmatch(part, "[^%-]+") do
+				table.insert(subParts, sub)
+			end
+		else
+			table.insert(subParts, part)
+		end
+
+		for _, sub in ipairs(subParts) do
+			sub = sub:match("^%s*(.-)%s*$")
+			if sub ~= "" then
+				-- Strip leading command/verb words: wts, wtb, selling, sell, wtt, buy, buying
+				local lowerSub = sub:lower()
+				local clean = sub
+				local prefixes = { "wts%s+", "wtb%s+", "selling%s+", "sell%s+", "wtt%s+", "buy%s+", "buying%s+" }
+				for _, pref in ipairs(prefixes) do
+					local startIdx, endIdx = lowerSub:find("^" .. pref)
+					if startIdx then
+						clean = sub:sub(endIdx + 1)
+						break
+					end
+				end
+
+				clean = clean:match("^%s*(.-)%s*$")
+
+				-- Strip trailing prices and common suffixes (e.g. 75, 9k, 1500p, 10kr, pst, obo)
+				clean = clean:gsub("%s+%d+%s*[kKpP]*%s*[lLrR]*%s*$", "")
+				clean = clean:gsub("%s+%d+%s*[kK]*[rR]*%s*$", "")
+				clean = clean:gsub("%s+%d+pp%s*$", "")
+				clean = clean:gsub("%s+%d+p%s*$", "")
+				clean = clean:gsub("%s+%d+kr%s*$", "")
+				clean = clean:gsub("%s+pst%s*$", "")
+				clean = clean:gsub("%s+obo%s*$", "")
+
+				-- Strip trailing exclamation marks/spaces
+				clean = clean:gsub("[%s!]+$", "")
+				clean = clean:match("^%s*(.-)%s*$")
+
+				-- Filter out noise words or very short strings
+				local lowerClean = clean:lower()
+				if #clean >= 3 and #clean <= 50 and 
+				   lowerClean ~= "send tell" and 
+				   lowerClean ~= "pst" and 
+				   lowerClean ~= "obo" and
+				   not lowerClean:match("^%s*$") then
+					table.insert(items, {
+						name = clean,
+						link = nil,
+						hex = nil,
+						isLink = false
+					})
+				end
+			end
+		end
+	end
+
+	return items
 end
 
 -- Register event listener for incoming auctions
@@ -259,21 +333,20 @@ local function processAuction(sender, message)
 			message = message:sub(1, -2)
 		end
 
-		-- Scan message for EverQuest item links
-		local links = extractLinks(message)
-		for _, linkInfo in ipairs(links) do
+		-- Parse both links and plain-text item names from the message
+		local parsedItems = parseMessageItems(message)
+		for _, parsed in ipairs(parsedItems) do
 			local itemId = nil
-			local hex = linkInfo.hex
-			if #hex >= 8 then
-				local idHex = hex:sub(3, 8)
+			if parsed.hex and #parsed.hex >= 8 then
+				local idHex = parsed.hex:sub(3, 8)
 				itemId = tonumber(idHex, 16)
 			end
 
 			table.insert(state.auctionMonitor, 1, {
 				time = os.time(),
 				sender = sender,
-				item = linkInfo.name,
-				link = "\x12" .. hex .. linkInfo.name .. "\x12",
+				item = parsed.name,
+				link = parsed.link,
 				itemId = itemId,
 				status = "Not Checked"
 			})
@@ -322,12 +395,31 @@ while state.openGUI do
 				end
 				completedEntry.listedPrice = listedPrice
 			end
+
+			-- Update matching entries in the auction monitor
+			for _, aucEntry in ipairs(state.auctionMonitor) do
+				if aucEntry.item:lower() == completedEntry.item:lower() then
+					if success and completedEntry.data then
+						aucEntry.medianPrice = completedEntry.listedPrice
+						aucEntry.hasData = true
+						aucEntry.status = "Success"
+					else
+						aucEntry.status = "Failed"
+					end
+				end
+			end
+
 			saveHistory()
 		end)
 
 		if not ok or not callbackCalled then
 			state.isSearching = false
 			entry.status = "Error"
+			for _, aucEntry in ipairs(state.auctionMonitor) do
+				if aucEntry.item:lower() == entry.item:lower() then
+					aucEntry.status = "Error"
+				end
+			end
 			saveHistory()
 		end
 	elseif #state.bulkQueue > 0 then
