@@ -40,8 +40,29 @@ local function formatNumber(amount)
 	return formatted
 end
 
+-- Helper function to format vendor price in gold/silver/copper
+local function formatVendorPrice(value)
+	if not value or value <= 0 then
+		return "-"
+	end
+	local plat = math.floor(value / 1000)
+	local remainder = value % 1000
+	local gold = math.floor(remainder / 100)
+	remainder = remainder % 100
+	local silver = math.floor(remainder / 10)
+	local copper = remainder % 10
+
+	local parts = {}
+	if plat > 0 then table.insert(parts, plat .. "p") end
+	if gold > 0 then table.insert(parts, gold .. "g") end
+	if silver > 0 then table.insert(parts, silver .. "s") end
+	if copper > 0 then table.insert(parts, copper .. "c") end
+
+	return table.concat(parts, " ")
+end
+
 -- Helper function to scan character inventory and return all unique items in worn bag slots (23 to 34)
-local function getInventoryItems()
+function ui.getInventoryItems()
 	local items = {}
 	local seenIds = {}
 	for i = 23, 34 do
@@ -568,7 +589,8 @@ function ui.render(state)
 						ImGui.TableSetColumnIndex(1)
 						if entry.status == "Success" and entry.data then
 							local sellSamples = entry.data.sellSampleSize or 0
-							if sellSamples <= 5 then
+							local limit = (state.config and state.config.lowSampleSize) or 5
+							if sellSamples <= limit then
 								ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "[!] ")
 								if ImGui.IsItemHovered() then
 									ImGui.BeginTooltip()
@@ -679,8 +701,8 @@ function ui.render(state)
 				if not canBulkSearch then
 					ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
 				end
-				if ImGui.Button(state.isBulkSearching and "Pricing Inventory..." or "Price Inventory", -1, 30) and canBulkSearch then
-					local items = getInventoryItems()
+				if ImGui.Button(state.isBulkSearching and "Pricing Inventory..." or "BULK PRICE CHECK", -1, 30) and canBulkSearch then
+					local items = ui.getInventoryItems()
 					state.bulkPriceHistory = {}
 					state.bulkQueue = {}
 
@@ -737,9 +759,10 @@ function ui.render(state)
 					ImGuiTableFlags.Sortable
 				)
 
-				if ImGui.BeginTable("BulkHistoryTable", 3, flags, 0, 0) then
+				if ImGui.BeginTable("BulkHistoryTable", 4, flags, 0, 0) then
 					ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
-					ImGui.TableSetupColumn("Median Price", ImGuiTableColumnFlags.WidthFixed, 120)
+					ImGui.TableSetupColumn("Median Price", ImGuiTableColumnFlags.WidthFixed, 100)
+					ImGui.TableSetupColumn("Vendor Sell", ImGuiTableColumnFlags.WidthFixed, 100)
 					ImGui.TableSetupColumn("Add", bit32.bor(ImGuiTableColumnFlags.WidthFixed, ImGuiTableColumnFlags.NoSort), 45)
 					ImGui.TableHeadersRow()
 
@@ -756,6 +779,20 @@ function ui.render(state)
 								elseif spec.ColumnIndex == 1 then
 									valA = (a.status == "Success" and a.hasData and a.medianPlatPrice) or -1
 									valB = (b.status == "Success" and b.hasData and b.medianPlatPrice) or -1
+								elseif spec.ColumnIndex == 2 then
+									local itemObjA = mq.TLO.FindItem(string.format('=%s', a.item))
+									local valObjA = 0
+									if itemObjA and itemObjA() then
+										valObjA = itemObjA.Value() or 0
+									end
+									valA = valObjA
+
+									local itemObjB = mq.TLO.FindItem(string.format('=%s', b.item))
+									local valObjB = 0
+									if itemObjB and itemObjB() then
+										valObjB = itemObjB.Value() or 0
+									end
+									valB = valObjB
 								else
 									return false
 								end
@@ -787,12 +824,27 @@ function ui.render(state)
 							else
 								ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "No price found")
 							end
+						elseif entry.status == "Not Checked" then
+							ImGui.TextColored(0.6, 0.6, 0.6, 1.0, "-")
 						else
 							ImGui.TextColored(1.0, 0.3, 0.3, 1.0, entry.status or "N/A")
 						end
 
-						-- Column 2: Add Button
+						-- Column 2: Vendor Sell Price
 						ImGui.TableSetColumnIndex(2)
+						local itemObj = mq.TLO.FindItem(string.format('=%s', entry.item))
+						local vValue = 0
+						if itemObj and itemObj() then
+							vValue = itemObj.Value() or 0
+						end
+						if vValue > 0 then
+							ImGui.TextColored(0.7, 0.7, 0.7, 1.0, formatVendorPrice(vValue))
+						else
+							ImGui.Text("-")
+						end
+
+						-- Column 3: Add Button
+						ImGui.TableSetColumnIndex(3)
 						if entry.status == "Success" and entry.hasData and entry.medianPlatPrice then
 							local isSearchingThis = false
 							for _, hEntry in ipairs(state.priceHistory) do
@@ -820,6 +872,68 @@ function ui.render(state)
 
 				ImGui.EndTabItem()
 			end
+
+			-- Configuration Tab (Colored Green)
+			ImGui.PushStyleColor(ImGuiCol.Tab, 0.1, 0.4, 0.1, 0.8)
+			ImGui.PushStyleColor(ImGuiCol.TabHovered, 0.2, 0.6, 0.2, 0.8)
+			ImGui.PushStyleColor(ImGuiCol.TabActive, 0.3, 0.8, 0.3, 0.8)
+
+			if ImGui.BeginTabItem("Configuration") then
+				ImGui.PopStyleColor(3)
+
+				ImGui.TextColored(0.4, 0.8, 1.0, 1.0, "Configuration Settings:")
+				ImGui.Separator()
+				ImGui.Spacing()
+
+				ImGui.Text("Low Sample Size Warning Limit:")
+				ImGui.PushItemWidth(100)
+				local valLimit, changedLimit = ImGui.InputInt("##low_sample_size", state.config.lowSampleSize or 5, 1, 5)
+				if valLimit < 0 then
+					valLimit = 0
+				end
+				state.config.lowSampleSize = valLimit
+				if changedLimit then
+					state.configSaveRequested = true
+				end
+				ImGui.PopItemWidth()
+
+				ImGui.Spacing()
+				ImGui.Text("Broadcast Debounce Delays (milliseconds):")
+				
+				ImGui.AlignTextToFramePadding()
+				ImGui.Text("Min Delay:")
+				ImGui.SameLine()
+				ImGui.PushItemWidth(100)
+				local valMin, changedMin = ImGui.InputInt("##debounce_min", state.config.debounceMin or 400, 10, 100)
+				if valMin < 0 then
+					valMin = 0
+				end
+				state.config.debounceMin = valMin
+				if changedMin then
+					state.configSaveRequested = true
+				end
+				ImGui.PopItemWidth()
+
+				ImGui.SameLine(180)
+				ImGui.AlignTextToFramePadding()
+				ImGui.Text("Max Delay:")
+				ImGui.SameLine()
+				ImGui.PushItemWidth(100)
+				local valMax, changedMax = ImGui.InputInt("##debounce_max", state.config.debounceMax or 600, 10, 100)
+				if valMax < 0 then
+					valMax = 0
+				end
+				state.config.debounceMax = valMax
+				if changedMax then
+					state.configSaveRequested = true
+				end
+				ImGui.PopItemWidth()
+
+				ImGui.EndTabItem()
+			else
+				ImGui.PopStyleColor(3)
+			end
+
 			ImGui.EndTabBar()
 		end
 

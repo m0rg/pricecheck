@@ -19,6 +19,53 @@ local json = PackageMan.Require("lua-cjson", "cjson")
 
 local state
 
+-- Default configuration settings
+local defaultConfig = {
+	lowSampleSize = 5,
+	debounceMin = 400,
+	debounceMax = 600,
+}
+
+-- Helper functions for persisting configuration
+local function loadConfig()
+	local savePath = string.format("%s/pricecheck_config.json", mq.configDir or ".")
+	local file = io.open(savePath, "r")
+	if not file then
+		return defaultConfig
+	end
+	local content = file:read("*all")
+	file:close()
+	if not content or content == "" then
+		return defaultConfig
+	end
+	local status, data = pcall(json.decode, content)
+	if not status or type(data) ~= "table" then
+		return defaultConfig
+	end
+	-- Merge defaults for missing keys
+	for k, v in pairs(defaultConfig) do
+		if data[k] == nil then
+			data[k] = v
+		end
+	end
+	return data
+end
+
+local function saveConfig()
+	if not state or not state.config then
+		return
+	end
+	local savePath = string.format("%s/pricecheck_config.json", mq.configDir or ".")
+	local file = io.open(savePath, "w")
+	if file then
+		local status, content = pcall(json.encode, state.config)
+		if status and content then
+			file:write(content)
+		end
+		file:close()
+	end
+end
+
 -- Helper functions for persisting price history
 local function loadHistory()
 	local savePath = string.format("%s/pricecheck_history.json", mq.configDir or ".")
@@ -81,6 +128,20 @@ local function filterZeroQtyHistory(history)
 end
 
 local loadedHistory = filterZeroQtyHistory(loadHistory())
+local loadedConfig = loadConfig()
+
+-- Populate bulk history on startup with names only
+local initialBulkHistory = {}
+local initItems = ui.getInventoryItems()
+for _, item in ipairs(initItems) do
+	table.insert(initialBulkHistory, {
+		itemId = item.id,
+		item = item.name,
+		medianPlatPrice = nil,
+		hasData = false,
+		status = "Not Checked",
+	})
+end
 
 -- Shared state context table (encapsulating all state without using globals)
 state = {
@@ -88,18 +149,20 @@ state = {
 	isSearching = false,
 	broadcastCommand = "/auction",
 	priceHistory = loadedHistory,
+	config = loadedConfig,
 	activeDetailEntry = nil,
 	searchQueue = {},
 	broadcastQueue = {},
-	bulkPriceHistory = {},
+	bulkPriceHistory = initialBulkHistory,
 	bulkLastUpdated = nil,
 	bulkKronoRate = nil,
 	bulkQueue = {},
 	isBulkSearching = false,
 }
 
--- Write back the filtered history
+-- Write back the filtered history and config
 saveHistory()
+saveConfig()
 
 -- Register the ImGui render loop callback with the shared state
 mq.imgui.init("PriceCheckWindow", function()
@@ -185,18 +248,28 @@ while state.openGUI do
 	elseif #state.broadcastQueue > 0 then
 		local commandLine = table.remove(state.broadcastQueue, 1)
 		mq.cmd(commandLine)
-		local delayTime = math.random(400, 800)
+		local min = (state.config and state.config.debounceMin) or 400
+		local max = (state.config and state.config.debounceMax) or 600
+		if min > max then
+			min, max = max, min
+		end
+		local delayTime = math.random(min, max)
 		mq.delay(delayTime)
 	else
 		mq.delay(100)
 	end
 
-	-- Check for save request from UI
+	-- Check for save requests
 	if state.saveRequested then
 		saveHistory()
 		state.saveRequested = false
+	end
+	if state.configSaveRequested then
+		saveConfig()
+		state.configSaveRequested = false
 	end
 end
 
 -- Save on exit
 saveHistory()
+saveConfig()
