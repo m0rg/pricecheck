@@ -19,9 +19,11 @@ local json = PackageMan.Require("lua-cjson", "cjson")
 local storage = require(myPath .. "storage")
 local char = require(myPath .. "char")
 local dto = require(myPath .. "dto")
+local chat = require(myPath .. "chat")
 
--- Initialize UI module with its dependencies (SRP / DI)
+-- Initialize UI and Chat modules with dependencies (SRP / DI)
 ui.setup(char, dto)
+chat.setup(dto)
 
 local state
 
@@ -109,22 +111,7 @@ saveHistory()
 saveConfig()
 
 -- Register event listener for incoming tells
-mq.event('TellEvent', '#1# tells you, \'#2#', function(line, sender, message)
-	if sender and message then
-		-- Filter out self-tells
-		local myName = mq.TLO.Me.CleanName()
-		if myName and sender:lower() == myName:lower() then
-			return
-		end
-
-		-- Clean up the trailing single quote
-		if message:sub(-1) == "'" then
-			message = message:sub(1, -2)
-		end
-
-		table.insert(state.receivedTells, dto.newTellEntry(sender, message))
-	end
-end)
+chat.registerTellEvent(state)
 
 -- Helper function to clean and validate plain-text item names
 
@@ -242,16 +229,8 @@ while state.openGUI do
 			end
 		end
 		mq.delay(100)
-	elseif #state.broadcastQueue > 0 then
-		local commandLine = table.remove(state.broadcastQueue, 1)
-		mq.cmd(commandLine)
-		local min = (state.config and state.config.debounceMin) or 400
-		local max = (state.config and state.config.debounceMax) or 600
-		if min > max then
-			min, max = max, min
-		end
-		local delayTime = math.random(min, max)
-		mq.delay(delayTime)
+	elseif chat.processBroadcastQueue(state) then
+		-- Handled by chat module
 	else
 		mq.delay(100)
 	end
