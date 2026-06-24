@@ -810,9 +810,33 @@ function ui.render(state)
 					for index, entry in ipairs(state.bulkPriceHistory) do
 						ImGui.TableNextRow()
 
+						-- Pre-calculate vendor sell price and check if it is higher/equal to market median price
+						local itemObj = mq.TLO.FindItem(string.format('=%s', entry.item))
+						local vValue = 0
+						if itemObj and itemObj() then
+							vValue = itemObj.Value() or 0
+						end
+
+						local isVendorBetter = false
+						if entry.status == "Success" and entry.hasData and entry.medianPlatPrice then
+							local vendorPlatPrice = vValue / 1000
+							if vendorPlatPrice >= entry.medianPlatPrice then
+								isVendorBetter = true
+							end
+						end
+
 						-- Column 0: Item Name
 						ImGui.TableSetColumnIndex(0)
-						ImGui.Text(entry.item)
+						if isVendorBetter then
+							ImGui.TextColored(1.0, 0.8, 0.2, 1.0, entry.item) -- Highlight item name in gold
+							if ImGui.IsItemHovered() then
+								ImGui.BeginTooltip()
+								ImGui.Text("Vendor sell price is higher or equal to market median price!")
+								ImGui.EndTooltip()
+							end
+						else
+							ImGui.Text(entry.item)
+						end
 
 						-- Column 1: Median Price / Status
 						ImGui.TableSetColumnIndex(1)
@@ -832,20 +856,23 @@ function ui.render(state)
 
 						-- Column 2: Vendor Sell Price
 						ImGui.TableSetColumnIndex(2)
-						local itemObj = mq.TLO.FindItem(string.format('=%s', entry.item))
-						local vValue = 0
-						if itemObj and itemObj() then
-							vValue = itemObj.Value() or 0
-						end
 						if vValue > 0 then
-							ImGui.TextColored(0.7, 0.7, 0.7, 1.0, formatVendorPrice(vValue))
+							if isVendorBetter then
+								ImGui.TextColored(0.4, 1.0, 0.4, 1.0, formatVendorPrice(vValue)) -- Highlight vendor price in green if it's better
+							else
+								ImGui.TextColored(0.7, 0.7, 0.7, 1.0, formatVendorPrice(vValue))
+							end
 						else
 							ImGui.Text("-")
 						end
 
-						-- Column 3: Add Button
+						-- Column 3: Add Button / Lootly Button
 						ImGui.TableSetColumnIndex(3)
-						if entry.status == "Success" and entry.hasData and entry.medianPlatPrice then
+						if isVendorBetter then
+							if ImGui.Button("SetItem##" .. index, -1, 18) then
+								mq.cmd(string.format("/setitem sell '%s'", entry.item))
+							end
+						elseif entry.status == "Success" and entry.hasData and entry.medianPlatPrice then
 							local isSearchingThis = false
 							for _, hEntry in ipairs(state.priceHistory) do
 								if hEntry.item:lower() == entry.item:lower() then
