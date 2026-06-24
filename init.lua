@@ -16,6 +16,12 @@ local ui = require(myPath .. "ui")
 local http = require(myPath .. "http")
 local PackageMan = require("mq/PackageMan")
 local json = PackageMan.Require("lua-cjson", "cjson")
+local storage = require(myPath .. "storage")
+local char = require(myPath .. "char")
+local dto = require(myPath .. "dto")
+
+-- Initialize UI module with its dependencies (SRP / DI)
+ui.setup(char, dto)
 
 local state
 
@@ -27,78 +33,18 @@ local defaultConfig = {
 	replyMessage = "Sure, near Parcel",
 }
 
--- Helper functions for persisting configuration
-local function loadConfig()
-	local savePath = string.format("%s/pricecheck_config.json", mq.configDir or ".")
-	local file = io.open(savePath, "r")
-	if not file then
-		return defaultConfig
-	end
-	local content = file:read("*all")
-	file:close()
-	if not content or content == "" then
-		return defaultConfig
-	end
-	local status, data = pcall(json.decode, content)
-	if not status or type(data) ~= "table" then
-		return defaultConfig
-	end
-	-- Merge defaults for missing keys
-	for k, v in pairs(defaultConfig) do
-		if data[k] == nil then
-			data[k] = v
-		end
-	end
-	return data
-end
-
 local function saveConfig()
 	if not state or not state.config then
 		return
 	end
-	local savePath = string.format("%s/pricecheck_config.json", mq.configDir or ".")
-	local file = io.open(savePath, "w")
-	if file then
-		local status, content = pcall(json.encode, state.config)
-		if status and content then
-			file:write(content)
-		end
-		file:close()
-	end
-end
-
--- Helper functions for persisting price history
-local function loadHistory()
-	local savePath = string.format("%s/pricecheck_history.json", mq.configDir or ".")
-	local file = io.open(savePath, "r")
-	if not file then
-		return {}
-	end
-	local content = file:read("*all")
-	file:close()
-	if not content or content == "" then
-		return {}
-	end
-	local status, data = pcall(json.decode, content)
-	if not status then
-		return {}
-	end
-	return data or {}
+	storage.saveConfig(state.config)
 end
 
 local function saveHistory()
 	if not state or not state.priceHistory then
 		return
 	end
-	local savePath = string.format("%s/pricecheck_history.json", mq.configDir or ".")
-	local file = io.open(savePath, "w")
-	if file then
-		local status, content = pcall(json.encode, state.priceHistory)
-		if status and content then
-			file:write(content)
-		end
-		file:close()
-	end
+	storage.saveHistory(state.priceHistory)
 end
 
 local function filterZeroQtyHistory(history)
@@ -112,7 +58,7 @@ local function filterZeroQtyHistory(history)
 			if not entry.id or entry.id == "" then
 				entry.id = tostring(os.clock() + math.random() + i):gsub("%.", "")
 			end
-			local count, bankCount = ui.getItemCounts(entry.item)
+			local count, bankCount = char.getItemCounts(entry.item)
 			if count + bankCount == 0 then
 				table.remove(history, i)
 			else
@@ -130,20 +76,14 @@ local function filterZeroQtyHistory(history)
 	return history
 end
 
-local loadedHistory = filterZeroQtyHistory(loadHistory())
-local loadedConfig = loadConfig()
+local loadedHistory = filterZeroQtyHistory(storage.loadHistory())
+local loadedConfig = storage.loadConfig(defaultConfig)
 
 -- Populate bulk history on startup with names only
 local initialBulkHistory = {}
-local initItems = ui.getInventoryItems()
+local initItems = char.getInventoryItems()
 for _, item in ipairs(initItems) do
-	table.insert(initialBulkHistory, {
-		itemId = item.id,
-		item = item.name,
-		medianPlatPrice = nil,
-		hasData = false,
-		status = "Not Checked",
-	})
+	table.insert(initialBulkHistory, dto.newBulkEntry(item.id, item.name))
 end
 
 -- Shared state context table (encapsulating all state without using globals)
@@ -182,11 +122,7 @@ mq.event('TellEvent', '#1# tells you, \'#2#', function(line, sender, message)
 			message = message:sub(1, -2)
 		end
 
-		table.insert(state.receivedTells, {
-			sender = sender,
-			message = message,
-			time = os.time(),
-		})
+		table.insert(state.receivedTells, dto.newTellEntry(sender, message))
 	end
 end)
 
@@ -257,14 +193,14 @@ while state.openGUI do
 							end
 						end
 						if not found then
-							table.insert(state.bulkPriceHistory, {
-								itemId = resItem.itemId,
-								item = resItem.item or "Unknown Item",
-								medianPlatPrice = resItem.medianPlatPrice,
-								hasData = resItem.hasData,
-								sampleSize = resItem.sampleSize,
-								status = "Success",
-							})
+							table.insert(state.bulkPriceHistory, dto.newBulkEntry(
+								resItem.itemId,
+								resItem.item or "Unknown Item",
+								"Success",
+								resItem.medianPlatPrice,
+								resItem.hasData,
+								resItem.sampleSize
+							))
 						end
 
 

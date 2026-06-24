@@ -61,48 +61,13 @@ local function formatVendorPrice(value)
 	return table.concat(parts, " ")
 end
 
--- Helper function to scan character inventory and return all unique items in worn bag slots (23 to 34)
-function ui.getInventoryItems()
-	local items = {}
-	local seenIds = {}
-	for i = 23, 34 do
-		local bag = mq.TLO.Me.Inventory(i)
-		if bag and bag() then
-			if bag.Container() and bag.Container() > 0 then
-				for slot = 1, bag.Container() do
-					local item = bag.Item(slot)
-					if item and item() then
-						local itemId = item.ID()
-						local itemName = item.Name()
-						if itemId and itemId > 0 and not seenIds[itemId] then
-							seenIds[itemId] = true
-							table.insert(items, { id = itemId, name = itemName })
-						end
-					end
-				end
-			else
-				local itemId = bag.ID()
-				local itemName = bag.Name()
-				if itemId and itemId > 0 and not seenIds[itemId] then
-					seenIds[itemId] = true
-					table.insert(items, { id = itemId, name = itemName })
-				end
-			end
-		end
-	end
-	return items
-end
+local char
+local dto
 
--- Helper function to return inventory and bank counts of an item (DRY consolidated)
-function ui.getItemCounts(itemName)
-	if not itemName or itemName == "" then
-		return 0, 0
-	end
-	local countObj = mq.TLO.FindItemCount(string.format('=%s', itemName))
-	local count = (countObj and countObj()) or 0
-	local bankObj = mq.TLO.FindItemBankCount(string.format('=%s', itemName))
-	local bankCount = (bankObj and bankObj()) or 0
-	return count, bankCount
+-- Injects character and data transfer dependencies (SRP)
+function ui.setup(charModule, dtoModule)
+	char = charModule
+	dto = dtoModule
 end
 
 
@@ -178,7 +143,7 @@ local function generateItemSegments(state, useLinks)
 			local itemName = (entry.data and entry.data.item) or entry.item
 			local listedPrice = entry.listedPrice or 0
 
-			local count = ui.getItemCounts(itemName)
+			local count = char.getItemCounts(itemName)
 			if count == 0 then
 				count = 1
 			end
@@ -255,13 +220,7 @@ local function queueSearch(state, itemName)
 			state.saveRequested = true
 		end
 	else
-		local uniqueId = tostring(os.clock()):gsub("%.", "")
-		local entry = {
-			id = uniqueId,
-			item = itemName,
-			data = nil,
-			status = "Searching...",
-		}
+		local entry = dto.newHistoryEntry(itemName, "Searching...")
 		table.insert(state.priceHistory, 1, entry)
 		table.insert(state.searchQueue, entry)
 		state.saveRequested = true
@@ -372,7 +331,7 @@ function ui.render(state)
 					ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
 				end
 				if ImGui.Button(state.isBulkSearching and "Pricing Inventory..." or "BULK PRICE CHECK", -1, 30) and canBulkSearch then
-					local items = ui.getInventoryItems()
+					local items = char.getInventoryItems()
 					state.bulkPriceHistory = {}
 					state.bulkQueue = {}
 
@@ -619,7 +578,7 @@ function ui.render(state)
 					local i = 1
 					while i <= #state.priceHistory do
 						local entry = state.priceHistory[i]
-						local count, bankCount = ui.getItemCounts(entry.item)
+						local count, bankCount = char.getItemCounts(entry.item)
 						if count + bankCount == 0 then
 							if state.activeDetailEntry == entry then
 								state.activeDetailEntry = nil
@@ -692,8 +651,8 @@ function ui.render(state)
 									valA = valA:lower()
 									valB = valB:lower()
 								elseif spec.ColumnIndex == 2 then
-									valA = ui.getItemCounts(a.item)
-									valB = ui.getItemCounts(b.item)
+									valA = char.getItemCounts(a.item)
+									valB = char.getItemCounts(b.item)
 								elseif spec.ColumnIndex == 3 then
 									valA = (a.status == "Success" and a.data and a.data.sellAverage) or -1
 									valB = (b.status == "Success" and b.data and b.data.sellAverage) or -1
@@ -768,7 +727,7 @@ function ui.render(state)
 
 						-- Column 2: Qty (Bank)
 						ImGui.TableSetColumnIndex(2)
-						local count, bankCount = ui.getItemCounts(entry.item)
+						local count, bankCount = char.getItemCounts(entry.item)
 						ImGui.Text(string.format("%d (%d)", count, bankCount))
 
 						-- Column 3: Avg Sell
