@@ -156,6 +156,7 @@ state = {
 	config = loadedConfig,
 	receivedTells = {},
 	auctionMonitor = {},
+	recordAuctions = true,
 	activeDetailEntry = nil,
 	searchQueue = {},
 	broadcastQueue = {},
@@ -194,21 +195,31 @@ end)
 
 -- Register event listener for incoming auctions
 mq.event('AuctionEvent', '#1# auctions, \'#2#', function(line, sender, message)
+	if not state.recordAuctions then
+		return
+	end
+
 	if sender and message then
 		-- Clean up the trailing single quote
 		if message:sub(-1) == "'" then
 			message = message:sub(1, -2)
 		end
 
-		-- Parse the auction message
-		local parsed = ui.parseAuctionText(message)
-		for _, parsedItem in ipairs(parsed) do
+		-- Scan message for EverQuest item links: \x12 + hex + item_name + \x12
+		for hex, name in string.gmatch(message, "\x12(%x+)([^\x12]+)\x12") do
+			local itemId = nil
+			if #hex >= 8 then
+				local idHex = hex:sub(3, 8)
+				itemId = tonumber(idHex, 16)
+			end
+
 			table.insert(state.auctionMonitor, 1, {
-				sender = sender,
-				item = parsedItem.item,
-				price = parsedItem.price,
-				unit = parsedItem.unit,
 				time = os.time(),
+				sender = sender,
+				item = name,
+				link = "\x12" .. hex .. name .. "\x12",
+				itemId = itemId,
+				status = "Not Checked"
 			})
 		end
 
@@ -287,6 +298,15 @@ while state.openGUI do
 								status = "Success",
 							})
 						end
+
+						-- Update auctionMonitor entries
+						for _, entry in ipairs(state.auctionMonitor) do
+							if entry.itemId == resItem.itemId then
+								entry.medianPrice = resItem.medianPlatPrice
+								entry.hasData = resItem.hasData
+								entry.status = "Success"
+							end
+						end
 					end
 				end
 				-- Update status for any items that were in this batch but had no data returned
@@ -297,6 +317,12 @@ while state.openGUI do
 							existing.hasData = false
 						end
 					end
+					for _, entry in ipairs(state.auctionMonitor) do
+						if entry.itemId == itemId and entry.status == "Searching..." then
+							entry.status = "Success"
+							entry.hasData = false
+						end
+					end
 				end
 			else
 				-- Set error status for all items in the batch if request failed
@@ -304,6 +330,11 @@ while state.openGUI do
 					for _, existing in ipairs(state.bulkPriceHistory) do
 						if existing.itemId == itemId and existing.status == "Searching..." then
 							existing.status = errMsg or "Error"
+						end
+					end
+					for _, entry in ipairs(state.auctionMonitor) do
+						if entry.itemId == itemId and entry.status == "Searching..." then
+							entry.status = errMsg or "Error"
 						end
 					end
 				end
@@ -317,6 +348,11 @@ while state.openGUI do
 				for _, existing in ipairs(state.bulkPriceHistory) do
 					if existing.itemId == itemId and existing.status == "Searching..." then
 						existing.status = "Error"
+					end
+				end
+				for _, entry in ipairs(state.auctionMonitor) do
+					if entry.itemId == itemId and entry.status == "Searching..." then
+						entry.status = "Error"
 					end
 				end
 			end

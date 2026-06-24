@@ -1103,8 +1103,56 @@ function ui.render(state)
 			end
 
 			if ImGui.BeginTabItem("Auctions") then
-				ImGui.TextColored(0.4, 0.8, 1.0, 1.0, "Monitored Auctions (/auction):")
-				ImGui.Separator()
+				-- Row for Actions & Controls
+				local recordVal, recordChanged = ImGui.Checkbox("Recording##auc", state.recordAuctions)
+				if recordChanged then
+					state.recordAuctions = recordVal
+				end
+
+				ImGui.SameLine()
+				ImGui.Spacing()
+				ImGui.SameLine()
+
+				-- Check if we have items that can be checked
+				local hasItemsToCheck = false
+				for _, entry in ipairs(state.auctionMonitor) do
+					if entry.itemId and entry.itemId > 0 and entry.status ~= "Searching..." then
+						hasItemsToCheck = true
+						break
+					end
+				end
+
+				local canBulkCheck = hasItemsToCheck and not state.isBulkSearching
+				if not canBulkCheck then
+					ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
+				end
+
+				if ImGui.Button("BULK CHECK##auc", 100, 20) and canBulkCheck then
+					local ids = {}
+					for _, entry in ipairs(state.auctionMonitor) do
+						if entry.itemId and entry.itemId > 0 and entry.status ~= "Searching..." then
+							table.insert(ids, entry.itemId)
+							entry.status = "Searching..."
+						end
+					end
+					if #ids > 0 then
+						state.bulkQueue = ids
+						state.isBulkSearching = true
+					end
+				end
+
+				if not canBulkCheck then
+					ImGui.PopStyleVar()
+				end
+
+				ImGui.SameLine()
+				ImGui.Spacing()
+				ImGui.SameLine()
+
+				if ImGui.Button("Clear##auc", 60, 20) then
+					state.auctionMonitor = {}
+				end
+
 				ImGui.Spacing()
 
 				local aFlags = bit32.bor(
@@ -1114,62 +1162,48 @@ function ui.render(state)
 					ImGuiTableFlags.ScrollY
 				)
 
-				if ImGui.BeginTable("AuctionMonitorTable", 5, aFlags, 0, 0) then
-					ImGui.TableSetupColumn("Time", ImGuiTableColumnFlags.WidthFixed, 60)
-					ImGui.TableSetupColumn("Player", ImGuiTableColumnFlags.WidthFixed, 90)
+				if ImGui.BeginTable("AuctionMonitorTable", 4, aFlags, 0, 0) then
+					ImGui.TableSetupColumn("Timestamp", ImGuiTableColumnFlags.WidthFixed, 75)
+					ImGui.TableSetupColumn("Vendor", ImGuiTableColumnFlags.WidthFixed, 90)
 					ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
-					ImGui.TableSetupColumn("Price", ImGuiTableColumnFlags.WidthFixed, 85)
-					ImGui.TableSetupColumn("Check", ImGuiTableColumnFlags.WidthFixed, 45)
+					ImGui.TableSetupColumn("Median Price", ImGuiTableColumnFlags.WidthFixed, 100)
 					ImGui.TableHeadersRow()
 
-					for _, entry in ipairs(state.auctionMonitor) do
+					for index, entry in ipairs(state.auctionMonitor) do
 						ImGui.TableNextRow()
 
-						-- Time
+						-- Column 0: Timestamp
 						ImGui.TableSetColumnIndex(0)
-						local diff = os.difftime(os.time(), entry.time)
-						local relative = "Just now"
-						if diff >= 60 then
-							relative = string.format("%dm ago", math.floor(diff / 60))
-						elseif diff > 0 then
-							relative = string.format("%ds ago", diff)
-						end
-						ImGui.Text(relative)
+						ImGui.Text(os.date("%H:%M:%S", entry.time))
 
-						-- Player
+						-- Column 1: Vendor
 						ImGui.TableSetColumnIndex(1)
 						ImGui.Text(entry.sender or "Unknown")
 
-						-- Item Name
+						-- Column 2: Item Name
 						ImGui.TableSetColumnIndex(2)
-						ImGui.Text(entry.item or "")
+						ImGui.TextColored(0.4, 0.8, 1.0, 1.0, entry.item or "")
+						if ImGui.IsItemHovered() then
+							ImGui.BeginTooltip()
+							ImGui.Text("Click to copy EverQuest item link to clipboard")
+							ImGui.EndTooltip()
+						end
+						if ImGui.IsItemClicked() then
+							ImGui.SetClipboardText(entry.link or "")
+						end
 
-						-- Price
+						-- Column 3: Median Price
 						ImGui.TableSetColumnIndex(3)
-						if entry.unit == "kr" then
-							ImGui.TextColored(1.0, 0.8, 0.2, 1.0, string.format("%d kr", entry.price))
-						else
-							ImGui.TextColored(0.4, 1.0, 0.4, 1.0, string.format("%s pp", formatNumber(entry.price)))
-						end
-
-						-- Action Check Button
-						ImGui.TableSetColumnIndex(4)
-						local isSearchingThis = false
-						for _, hEntry in ipairs(state.priceHistory) do
-							if hEntry.item:lower() == entry.item:lower() then
-								if hEntry.status == "Searching..." then
-									isSearchingThis = true
-								end
-								break
+						if entry.status == "Searching..." then
+							ImGui.TextColored(1.0, 0.8, 0.2, 1.0, entry.status)
+						elseif entry.status == "Success" then
+							if entry.hasData and entry.medianPrice then
+								ImGui.TextColored(0.4, 1.0, 0.4, 1.0, string.format("%s pp", formatNumber(math.floor(entry.medianPrice))))
+							else
+								ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "No price found")
 							end
-						end
-
-						if isSearchingThis then
-							ImGui.TextColored(1.0, 0.8, 0.2, 1.0, "...")
 						else
-							if ImGui.Button("+##auc_" .. entry.time .. "_" .. entry.item, -1, 18) then
-								queueSearch(state, entry.item)
-							end
+							ImGui.TextColored(0.6, 0.6, 0.6, 1.0, "-")
 						end
 					end
 
