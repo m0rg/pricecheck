@@ -206,11 +206,13 @@ while state.openGUI do
 		local entry = table.remove(state.searchQueue, 1)
 		state.isSearching = true
 		local callbackCalled = false
-		local ok, err = pcall(http.performSearch, entry, function(completedEntry, success)
+		local ok, err = pcall(http.performSearch, entry.item, function(success, data, statusText)
 			callbackCalled = true
 			state.isSearching = false
-			if success and completedEntry.data then
-				local avgSell = completedEntry.data.sellAverage or completedEntry.data.buyAverage or 0
+			entry.status = statusText
+			if success and data then
+				entry.data = data
+				local avgSell = data.sellAverage or data.buyAverage or 0
 				local listedPrice = 0
 				if avgSell <= 100 then
 					listedPrice = math.ceil(avgSell / 10) * 10
@@ -219,10 +221,8 @@ while state.openGUI do
 				else
 					listedPrice = math.ceil(avgSell / 100) * 100
 				end
-				completedEntry.listedPrice = listedPrice
+				entry.listedPrice = listedPrice
 			end
-
-
 
 			saveHistory()
 		end)
