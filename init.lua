@@ -155,6 +155,7 @@ state = {
 	priceHistory = loadedHistory,
 	config = loadedConfig,
 	receivedTells = {},
+	auctionMonitor = {},
 	activeDetailEntry = nil,
 	searchQueue = {},
 	broadcastQueue = {},
@@ -188,6 +189,33 @@ mq.event('TellEvent', '#1# tells you, \'#2#', function(line, sender, message)
 			message = message,
 			time = os.time(),
 		})
+	end
+end)
+
+-- Register event listener for incoming auctions
+mq.event('AuctionEvent', '#1# auctions, \'#2#', function(line, sender, message)
+	if sender and message then
+		-- Clean up the trailing single quote
+		if message:sub(-1) == "'" then
+			message = message:sub(1, -2)
+		end
+
+		-- Parse the auction message
+		local parsed = ui.parseAuctionText(message)
+		for _, parsedItem in ipairs(parsed) do
+			table.insert(state.auctionMonitor, 1, {
+				sender = sender,
+				item = parsedItem.item,
+				price = parsedItem.price,
+				unit = parsedItem.unit,
+				time = os.time(),
+			})
+		end
+
+		-- Limit to last 100 entries to prevent infinite memory growth
+		while #state.auctionMonitor > 100 do
+			table.remove(state.auctionMonitor)
+		end
 	end
 end)
 

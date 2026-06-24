@@ -87,3 +87,21 @@ http.performBulkSearch(bulkIds, function(result, success, errMsg)
 		print("Error: ", errMsg)
 	end
 end)
+
+print("\n--- Testing Auction Parsing ---")
+local ui = require("ui")
+local testMessages = {
+	"WTS Krono 5000pp",
+	"WTS Blue Diamond 250p, Krono 5kr",
+	"Krono 5000 pp",
+	"WTS \x1200112233Girdle of the Kael's Vanguard\x12 200p",
+	"WTS Giant's Eye 100",
+}
+
+for _, msg in ipairs(testMessages) do
+	print("Input Message: " .. msg:gsub("\x12", "\\x12"))
+	local parsed = ui.parseAuctionText(msg)
+	for _, item in ipairs(parsed) do
+		print(string.format("  -> Parsed: Item=\"%s\", Price=%d, Unit=\"%s\"", item.item, item.price, item.unit))
+	end
+end

@@ -93,6 +93,68 @@ function ui.getInventoryItems()
 	return items
 end
 
+-- Helper function to parse EverQuest auction text
+function ui.parseAuctionText(text)
+	local parsed = {}
+	if not text then
+		return parsed
+	end
+
+	-- Split text by comma or semicolon
+	for part in string.gmatch(text, "([^,;]+)") do
+		-- Trim leading/trailing whitespace
+		part = part:match("^%s*(.-)%s*$")
+		
+		-- Clean EQ link tags to get clean item names (e.g. \x1200112233Blue Diamond\x12 -> Blue Diamond)
+		part = part:gsub("\x12%x+(.-)\x12", "%1")
+
+		-- Look for a number followed by letters (e.g. 5000pp, 5kr, 200p)
+		local itemPart, priceStr, unit = part:match("^(.-)%s+(%d+)%s*([%a]+)%s*$")
+		if not itemPart then
+			-- Try matching just a number at the end (accepting unit-less as pp)
+			itemPart, priceStr = part:match("^(.-)%s+(%d+)%s*$")
+			unit = "pp"
+		end
+
+		if itemPart and priceStr then
+			-- Trim itemPart
+			itemPart = itemPart:match("^%s*(.-)%s*$")
+			-- Strip WTS, WTB, selling, sell (case-insensitive)
+			local lower = itemPart:lower()
+			if lower:sub(1, 4) == "wts " then
+				itemPart = itemPart:sub(5)
+			elseif lower:sub(1, 4) == "wtb " then
+				itemPart = itemPart:sub(5)
+			elseif lower:sub(1, 8) == "selling " then
+				itemPart = itemPart:sub(9)
+			elseif lower:sub(1, 5) == "sell " then
+				itemPart = itemPart:sub(6)
+			end
+			-- Trim again
+			itemPart = itemPart:match("^%s*(.-)%s*$")
+
+			local priceVal = tonumber(priceStr) or 0
+			local unitLower = unit:lower()
+
+			local resolvedUnit = "pp"
+			if unitLower == "kr" or unitLower == "krono" or unitLower == "kronos" then
+				resolvedUnit = "kr"
+			elseif unitLower == "p" or unitLower == "pp" or unitLower == "plat" or unitLower == "platinum" then
+				resolvedUnit = "pp"
+			end
+
+			if itemPart ~= "" and priceVal > 0 then
+				table.insert(parsed, {
+					item = itemPart,
+					price = priceVal,
+					unit = resolvedUnit
+				})
+			end
+		end
+	end
+	return parsed
+end
+
 -- Helper function to output a clean, human-readable relative string
 local function getRelativeTimeString(isoStr)
 	local pastTime = parseISOTimestamp(isoStr)
@@ -1032,6 +1094,83 @@ function ui.render(state)
 							end
 						end
 						state.tellToRemove = nil
+					end
+
+					ImGui.EndTable()
+				end
+
+				ImGui.EndTabItem()
+			end
+
+			if ImGui.BeginTabItem("Auctions") then
+				ImGui.TextColored(0.4, 0.8, 1.0, 1.0, "Monitored Auctions (/auction):")
+				ImGui.Separator()
+				ImGui.Spacing()
+
+				local aFlags = bit32.bor(
+					ImGuiTableFlags.Borders,
+					ImGuiTableFlags.RowBg,
+					ImGuiTableFlags.Resizable,
+					ImGuiTableFlags.ScrollY
+				)
+
+				if ImGui.BeginTable("AuctionMonitorTable", 5, aFlags, 0, 0) then
+					ImGui.TableSetupColumn("Time", ImGuiTableColumnFlags.WidthFixed, 60)
+					ImGui.TableSetupColumn("Player", ImGuiTableColumnFlags.WidthFixed, 90)
+					ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
+					ImGui.TableSetupColumn("Price", ImGuiTableColumnFlags.WidthFixed, 85)
+					ImGui.TableSetupColumn("Check", ImGuiTableColumnFlags.WidthFixed, 45)
+					ImGui.TableHeadersRow()
+
+					for _, entry in ipairs(state.auctionMonitor) do
+						ImGui.TableNextRow()
+
+						-- Time
+						ImGui.TableSetColumnIndex(0)
+						local diff = os.difftime(os.time(), entry.time)
+						local relative = "Just now"
+						if diff >= 60 then
+							relative = string.format("%dm ago", math.floor(diff / 60))
+						elseif diff > 0 then
+							relative = string.format("%ds ago", diff)
+						end
+						ImGui.Text(relative)
+
+						-- Player
+						ImGui.TableSetColumnIndex(1)
+						ImGui.Text(entry.sender or "Unknown")
+
+						-- Item Name
+						ImGui.TableSetColumnIndex(2)
+						ImGui.Text(entry.item or "")
+
+						-- Price
+						ImGui.TableSetColumnIndex(3)
+						if entry.unit == "kr" then
+							ImGui.TextColored(1.0, 0.8, 0.2, 1.0, string.format("%d kr", entry.price))
+						else
+							ImGui.TextColored(0.4, 1.0, 0.4, 1.0, string.format("%s pp", formatNumber(entry.price)))
+						end
+
+						-- Action Check Button
+						ImGui.TableSetColumnIndex(4)
+						local isSearchingThis = false
+						for _, hEntry in ipairs(state.priceHistory) do
+							if hEntry.item:lower() == entry.item:lower() then
+								if hEntry.status == "Searching..." then
+									isSearchingThis = true
+								end
+								break
+							end
+						end
+
+						if isSearchingThis then
+							ImGui.TextColored(1.0, 0.8, 0.2, 1.0, "...")
+						else
+							if ImGui.Button("+##auc_" .. entry.time .. "_" .. entry.item, -1, 18) then
+								queueSearch(state, entry.item)
+							end
+						end
 					end
 
 					ImGui.EndTable()
