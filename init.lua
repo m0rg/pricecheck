@@ -156,7 +156,7 @@ state = {
 	config = loadedConfig,
 	receivedTells = {},
 	auctionMonitor = {},
-	recordAuctions = true,
+	recordAuctions = false,
 	activeDetailEntry = nil,
 	searchQueue = {},
 	broadcastQueue = {},
@@ -194,7 +194,7 @@ mq.event('TellEvent', '#1# tells you, \'#2#', function(line, sender, message)
 end)
 
 -- Register event listener for incoming auctions
-mq.event('AuctionEvent', '#1# auctions, \'#2#', function(line, sender, message)
+local function processAuction(sender, message)
 	if not state.recordAuctions then
 		return
 	end
@@ -228,6 +228,15 @@ mq.event('AuctionEvent', '#1# auctions, \'#2#', function(line, sender, message)
 			table.remove(state.auctionMonitor)
 		end
 	end
+end
+
+mq.event('AuctionEvent1', '#1# auctions, \'#2#', function(line, sender, message)
+	processAuction(sender, message)
+end)
+
+mq.event('AuctionEvent2', 'You auction, \'#1#', function(line, message)
+	local myName = mq.TLO.Me.CleanName() or "You"
+	processAuction(myName, message)
 end)
 
 -- Register the ImGui render loop callback with the shared state
