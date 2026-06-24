@@ -639,9 +639,9 @@ function ui.render(state)
 						-- Column 0: Selected Checkbox & Remove Button
 						ImGui.TableSetColumnIndex(0)
 						if entry.status == "Success" then
-							local changed, newVal = ImGui.Checkbox("##sel_" .. entry.id, entry.selected)
+							local val, changed = ImGui.Checkbox("##sel_" .. entry.id, entry.selected)
+							entry.selected = val
 							if changed then
-								entry.selected = newVal
 								state.saveRequested = true
 							end
 							ImGui.SameLine()
@@ -1104,9 +1104,9 @@ function ui.render(state)
 
 			if ImGui.BeginTabItem("Auctions") then
 				-- Row for Actions & Controls
-				local recordChanged, newRecordVal = ImGui.Checkbox("Recording##auc", state.recordAuctions)
+				local recordVal, recordChanged = ImGui.Checkbox("Recording##auc", state.recordAuctions)
 				if recordChanged then
-					state.recordAuctions = newRecordVal
+					state.recordAuctions = recordVal
 				end
 
 				ImGui.SameLine()
