@@ -119,8 +119,8 @@ function http.performBulkSearch(itemIds, onComplete)
 		end
 
 		local resp_str = table.concat(response_body)
-		local status_dec, result = pcall(json.decode, resp_str)
-		if not status_dec or type(result) ~= "table" then
+		local ok_dec, result = pcall(json.decode, resp_str)
+		if not ok_dec or type(result) ~= "table" then
 			lastError = "JSON decoding error"
 			break
 		end
@@ -135,6 +135,7 @@ function http.performBulkSearch(itemIds, onComplete)
 
 		-- Yield to MacroQuest loop between calls if there are more chunks
 		if i + 10 <= #itemIds then
+			mq.doevents()
 			mq.delay(50)
 		end
 	end

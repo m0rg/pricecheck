@@ -484,6 +484,7 @@ function ui.render(state)
 				ImGui.SameLine(ImGui.GetWindowWidth() - 90)
 				if ImGui.Button("Clear All", 75, 0) then
 					state.priceHistory = {}
+					state.searchQueue = {}
 					state.activeDetailEntry = nil
 					state.saveRequested = true
 				end
@@ -592,7 +593,7 @@ function ui.render(state)
 						ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.8, 0.2, 0.2, 1.0)
 						ImGui.PushStyleColor(ImGuiCol.ButtonActive, 1.0, 0.3, 0.3, 1.0)
 						if ImGui.Button("X##rem_" .. entry.id, 18, 18) then
-							state.itemIndexToRemove = index
+							state.itemToRemove = entry
 						end
 						ImGui.PopStyleColor(3)
 
@@ -699,20 +700,29 @@ function ui.render(state)
 						end
 					end
 
-					if state.itemIndexToRemove then
-						local entry = state.priceHistory[state.itemIndexToRemove]
-						if state.activeDetailEntry == entry then
-							state.activeDetailEntry = nil
-						end
-						for sqIdx, sqEntry in ipairs(state.searchQueue) do
-							if sqEntry == entry then
-								table.remove(state.searchQueue, sqIdx)
+					if state.itemToRemove then
+						local foundIdx = nil
+						for i, hEntry in ipairs(state.priceHistory) do
+							if hEntry == state.itemToRemove then
+								foundIdx = i
 								break
 							end
 						end
-						table.remove(state.priceHistory, state.itemIndexToRemove)
-						state.itemIndexToRemove = nil
-						state.saveRequested = true
+						if foundIdx then
+							local entry = state.priceHistory[foundIdx]
+							if state.activeDetailEntry == entry then
+								state.activeDetailEntry = nil
+							end
+							for sqIdx, sqEntry in ipairs(state.searchQueue) do
+								if sqEntry == entry then
+									table.remove(state.searchQueue, sqIdx)
+									break
+								end
+							end
+							table.remove(state.priceHistory, foundIdx)
+							state.saveRequested = true
+						end
+						state.itemToRemove = nil
 					end
 
 					ImGui.EndTable()
@@ -898,7 +908,7 @@ function ui.render(state)
 						ImGui.TableSetColumnIndex(3)
 						if isVendorBetter then
 							if ImGui.Button("SetItem##" .. index, -1, 18) then
-								mq.cmd(string.format("/setitem sell '%s'", entry.item))
+								mq.cmd(string.format('/setitem sell "%s"', entry.item))
 							end
 						elseif entry.status == "Success" and entry.hasData and entry.medianPlatPrice then
 							local isSearchingThis = false
@@ -1001,7 +1011,7 @@ function ui.render(state)
 						ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.7, 0.2, 1.0)
 						ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.3, 0.9, 0.3, 1.0)
 						if ImGui.Button("V##done_" .. index, 30, 18) then
-							state.tellIndexToRemove = index
+							state.tellToRemove = tell
 						end
 						ImGui.PopStyleColor(3)
 
@@ -1014,9 +1024,14 @@ function ui.render(state)
 						end
 					end
 
-					if state.tellIndexToRemove then
-						table.remove(state.receivedTells, state.tellIndexToRemove)
-						state.tellIndexToRemove = nil
+					if state.tellToRemove then
+						for i, t in ipairs(state.receivedTells) do
+							if t == state.tellToRemove then
+								table.remove(state.receivedTells, i)
+								break
+							end
+						end
+						state.tellToRemove = nil
 					end
 
 					ImGui.EndTable()

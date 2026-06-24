@@ -109,6 +109,9 @@ local function filterZeroQtyHistory(history)
 	while i <= #history do
 		local entry = history[i]
 		if type(entry) == "table" and type(entry.item) == "string" then
+			if not entry.id or entry.id == "" then
+				entry.id = tostring(os.clock() + math.random() + i):gsub("%.", "")
+			end
 			local countObj = mq.TLO.FindItemCount(string.format('=%s', entry.item))
 			local count = (countObj and countObj()) or 0
 			local bankObj = mq.TLO.FindItemBankCount(string.format('=%s', entry.item))
@@ -188,7 +191,9 @@ while state.openGUI do
 	if #state.searchQueue > 0 and not state.isSearching then
 		local entry = table.remove(state.searchQueue, 1)
 		state.isSearching = true
-		http.performSearch(entry, function(completedEntry, success)
+		local callbackCalled = false
+		local ok, err = pcall(http.performSearch, entry, function(completedEntry, success)
+			callbackCalled = true
 			state.isSearching = false
 			if success and completedEntry.data then
 				local avgSell = completedEntry.data.sellAverage or completedEntry.data.buyAverage or 0
@@ -204,11 +209,19 @@ while state.openGUI do
 			end
 			saveHistory()
 		end)
+
+		if not ok or not callbackCalled then
+			state.isSearching = false
+			entry.status = "Error"
+			saveHistory()
+		end
 	elseif #state.bulkQueue > 0 then
 		local ids = state.bulkQueue
 		state.bulkQueue = {}
 		state.isBulkSearching = true
-		http.performBulkSearch(ids, function(result, success, errMsg)
+		local callbackCalled = false
+		local ok, err = pcall(http.performBulkSearch, ids, function(result, success, errMsg)
+			callbackCalled = true
 			if success and result then
 				state.bulkLastUpdated = result.lastUpdated
 				state.bulkKronoRate = result.kronoRate
@@ -258,6 +271,17 @@ while state.openGUI do
 			end
 			state.isBulkSearching = false
 		end)
+
+		if not ok or not callbackCalled then
+			state.isBulkSearching = false
+			for _, itemId in ipairs(ids) do
+				for _, existing in ipairs(state.bulkPriceHistory) do
+					if existing.itemId == itemId and existing.status == "Searching..." then
+						existing.status = "Error"
+					end
+				end
+			end
+		end
 		mq.delay(100)
 	elseif #state.broadcastQueue > 0 then
 		local commandLine = table.remove(state.broadcastQueue, 1)
