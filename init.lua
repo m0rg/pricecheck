@@ -1,5 +1,7 @@
 local mq = require("mq")
 
+math.randomseed(os.time())
+
 -- Use dynamic module paths relative to script invocation to support standard loading
 local myPath = ...
 if myPath then
@@ -12,13 +14,80 @@ end
 
 local ui = require(myPath .. "ui")
 local http = require(myPath .. "http")
+local PackageMan = require("mq/PackageMan")
+local json = PackageMan.Require("lua-cjson", "cjson")
+
+local state
+
+-- Helper functions for persisting price history
+local function loadHistory()
+	local savePath = string.format("%s/pricecheck_history.json", mq.configDir or ".")
+	local file = io.open(savePath, "r")
+	if not file then
+		return {}
+	end
+	local content = file:read("*all")
+	file:close()
+	if not content or content == "" then
+		return {}
+	end
+	local status, data = pcall(json.decode, content)
+	if not status then
+		return {}
+	end
+	return data or {}
+end
+
+local function saveHistory()
+	if not state or not state.priceHistory then
+		return
+	end
+	local savePath = string.format("%s/pricecheck_history.json", mq.configDir or ".")
+	local file = io.open(savePath, "w")
+	if file then
+		local status, content = pcall(json.encode, state.priceHistory)
+		if status and content then
+			file:write(content)
+		end
+		file:close()
+	end
+end
+
+local function filterZeroQtyHistory(history)
+	if type(history) ~= "table" then
+		return {}
+	end
+	local i = 1
+	while i <= #history do
+		local entry = history[i]
+		if type(entry) == "table" and type(entry.item) == "string" then
+			local countObj = mq.TLO.FindItemCount(string.format('=%s', entry.item))
+			local count = (countObj and countObj()) or 0
+			local bankObj = mq.TLO.FindItemBankCount(string.format('=%s', entry.item))
+			local bankCount = (bankObj and bankObj()) or 0
+			if count + bankCount == 0 then
+				table.remove(history, i)
+			else
+				if entry.status == "Searching..." then
+					entry.status = "Failed"
+				end
+				i = i + 1
+			end
+		else
+			table.remove(history, i)
+		end
+	end
+	return history
+end
+
+local loadedHistory = filterZeroQtyHistory(loadHistory())
 
 -- Shared state context table (encapsulating all state without using globals)
-local state = {
+state = {
 	openGUI = true,
 	isSearching = false,
 	broadcastCommand = "/auction",
-	priceHistory = {},
+	priceHistory = loadedHistory,
 	activeDetailEntry = nil,
 	searchQueue = {},
 	broadcastQueue = {},
@@ -28,6 +97,9 @@ local state = {
 	bulkQueue = {},
 	isBulkSearching = false,
 }
+
+-- Write back the filtered history
+saveHistory()
 
 -- Register the ImGui render loop callback with the shared state
 mq.imgui.init("PriceCheckWindow", function()
@@ -53,6 +125,7 @@ while state.openGUI do
 				end
 				completedEntry.listedPrice = listedPrice
 			end
+			saveHistory()
 		end)
 	elseif #state.bulkQueue > 0 then
 		local ids = state.bulkQueue
@@ -112,8 +185,18 @@ while state.openGUI do
 	elseif #state.broadcastQueue > 0 then
 		local commandLine = table.remove(state.broadcastQueue, 1)
 		mq.cmd(commandLine)
-		mq.delay(200)
+		local delayTime = math.random(400, 800)
+		mq.delay(delayTime)
 	else
 		mq.delay(100)
 	end
+
+	-- Check for save request from UI
+	if state.saveRequested then
+		saveHistory()
+		state.saveRequested = false
+	end
 end
+
+-- Save on exit
+saveHistory()

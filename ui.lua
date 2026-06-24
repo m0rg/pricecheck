@@ -211,12 +211,14 @@ local function queueSearch(state, itemName)
 		if existingIndex > 1 then
 			table.remove(state.priceHistory, existingIndex)
 			table.insert(state.priceHistory, 1, existingEntry)
+			state.saveRequested = true
 		end
 
 		if existingEntry.status ~= "Searching..." then
 			existingEntry.status = "Searching..."
 			existingEntry.data = nil
 			table.insert(state.searchQueue, existingEntry)
+			state.saveRequested = true
 		end
 	else
 		local uniqueId = tostring(os.clock()):gsub("%.", "")
@@ -229,6 +231,7 @@ local function queueSearch(state, itemName)
 		}
 		table.insert(state.priceHistory, 1, entry)
 		table.insert(state.searchQueue, entry)
+		state.saveRequested = true
 	end
 end
 
@@ -404,9 +407,12 @@ function ui.render(state)
 					ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
 				end
 
+				local avail = ImGui.GetContentRegionAvail()
+				local buttonWidth = (avail - ImGui.GetStyle().ItemSpacing.x) / 2
+
 				local buttonLabel = isBroadcasting and "Broadcasting..."
 					or string.format("Broadcast via %s", (state.broadcastCommand ~= "" and state.broadcastCommand or "/auction"))
-				if ImGui.Button(buttonLabel, -1, 30) and canBroadcast then
+				if ImGui.Button(buttonLabel, buttonWidth, 30) and canBroadcast then
 					local realAuctionLines = getAuctionLines(state, true)
 					for _, commandLine in ipairs(realAuctionLines) do
 						table.insert(state.broadcastQueue, commandLine)
@@ -414,6 +420,38 @@ function ui.render(state)
 				end
 				if not canBroadcast then
 					ImGui.PopStyleVar()
+				end
+
+				ImGui.SameLine()
+
+				if ImGui.Button("Recheck Qty", buttonWidth, 30) then
+					local removedAny = false
+					local i = 1
+					while i <= #state.priceHistory do
+						local entry = state.priceHistory[i]
+						local countObj = mq.TLO.FindItemCount(string.format('=%s', entry.item))
+						local count = (countObj and countObj()) or 0
+						local bankObj = mq.TLO.FindItemBankCount(string.format('=%s', entry.item))
+						local bankCount = (bankObj and bankObj()) or 0
+						if count + bankCount == 0 then
+							if state.activeDetailEntry == entry then
+								state.activeDetailEntry = nil
+							end
+							for sqIdx, sqEntry in ipairs(state.searchQueue) do
+								if sqEntry == entry then
+									table.remove(state.searchQueue, sqIdx)
+									break
+								end
+							end
+							table.remove(state.priceHistory, i)
+							removedAny = true
+						else
+							i = i + 1
+						end
+					end
+					if removedAny then
+						state.saveRequested = true
+					end
 				end
 
 				ImGui.Separator()
@@ -426,6 +464,7 @@ function ui.render(state)
 				if ImGui.Button("Clear All", 75, 0) then
 					state.priceHistory = {}
 					state.activeDetailEntry = nil
+					state.saveRequested = true
 				end
 
 				local flags = bit32.bor(
@@ -507,6 +546,7 @@ function ui.render(state)
 							end)
 						end
 						sortSpecs.SpecsDirty = false
+						state.saveRequested = true
 					end
 
 					for index, entry in ipairs(state.priceHistory) do
@@ -515,7 +555,11 @@ function ui.render(state)
 						-- Column 0: Selected Checkbox
 						ImGui.TableSetColumnIndex(0)
 						if entry.status == "Success" then
-							entry.selected = ImGui.Checkbox("##sel_" .. entry.id, entry.selected)
+							local val, changed = ImGui.Checkbox("##sel_" .. entry.id, entry.selected)
+							entry.selected = val
+							if changed then
+								state.saveRequested = true
+							end
 						else
 							ImGui.Text("-")
 						end
@@ -550,11 +594,14 @@ function ui.render(state)
 						ImGui.TableSetColumnIndex(4)
 						if entry.status == "Success" then
 							ImGui.PushItemWidth(-1)
-							local val = ImGui.InputInt("##list_" .. entry.id, entry.listedPrice or 0, 0, 0)
+							local val, changed = ImGui.InputInt("##list_" .. entry.id, entry.listedPrice or 0, 0, 0)
 							if val < 0 then
 								val = 0
 							end
 							entry.listedPrice = val
+							if changed then
+								state.saveRequested = true
+							end
 							ImGui.PopItemWidth()
 						else
 							ImGui.Text("-")
