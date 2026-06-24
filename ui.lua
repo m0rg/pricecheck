@@ -1102,7 +1102,7 @@ function ui.render(state)
 				ImGui.EndTabItem()
 			end
 
-			if ImGui.BeginTabItem("Auctions") then
+			if state.config.debugMode and ImGui.BeginTabItem("Auctions") then
 				-- Row for Actions & Controls
 				local recordVal, recordChanged = ImGui.Checkbox("Recording##auc", state.recordAuctions)
 				if recordChanged then

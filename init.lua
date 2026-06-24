@@ -25,6 +25,7 @@ local defaultConfig = {
 	debounceMin = 400,
 	debounceMax = 600,
 	replyMessage = "Sure, near Parcel",
+	debugMode = false,
 }
 
 -- Helper functions for persisting configuration
@@ -388,6 +389,10 @@ end
 
 -- Register event listener for incoming auctions
 local function processAuction(sender, message)
+	if not state.config or not state.config.debugMode then
+		return
+	end
+
 	-- Print a debug message to the MQ console so the user can verify if the event triggers
 	print(string.format("[PriceCheck Debug] Auction event triggered: sender=%s, message=%s, recordAuctions=%s", tostring(sender), tostring(message), tostring(state.recordAuctions)))
 
