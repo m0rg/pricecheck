@@ -277,6 +277,41 @@ local function cleanAndValidateName(sub)
 	return clean
 end
 
+-- Helper function to split a single item link into hex and name safely without greedy name corruption
+local function parseSingleLink(eqLink)
+	if not eqLink then return nil, nil end
+	local content = eqLink:match("\x12([^\x12]+)\x12")
+	if not content then return nil, nil end
+
+	-- Check 54-char hex prefix (Live/TLP)
+	if #content > 54 then
+		local h = content:sub(1, 54)
+		if h:match("^%x+$") then
+			return h, content:sub(55)
+		end
+	end
+	-- Check 9-char hex prefix (classic/emulator)
+	if #content > 9 then
+		local h = content:sub(1, 9)
+		if h:match("^%x+$") then
+			return h, content:sub(10)
+		end
+	end
+	-- Check 8-char hex prefix (used in test cases)
+	if #content > 8 then
+		local h = content:sub(1, 8)
+		if h:match("^%x+$") then
+			return h, content:sub(9)
+		end
+	end
+	-- Fallback: greedy match
+	local h, n = content:match("^(%x+)(.*)$")
+	if h and h ~= "" then
+		return h, n
+	end
+	return nil, nil
+end
+
 -- Helper function to extract both item links and plain-text item names from an auction message
 local function parseMessageItems(message)
 	local items = {}
@@ -287,49 +322,17 @@ local function parseMessageItems(message)
 	-- 1. Extract and process actual item links
 	local remaining = message
 	for content in string.gmatch(message, "\x12([^\x12]+)\x12") do
-		local hex, name = nil, nil
-		-- Check 54-char hex prefix (Live/TLP)
-		if #content > 54 then
-			local h = content:sub(1, 54)
-			if h:match("^%x+$") then
-				hex = h
-				name = content:sub(55)
-			end
-		end
-		-- Check 9-char hex prefix (classic/emulator)
-		if not hex and #content > 9 then
-			local h = content:sub(1, 9)
-			if h:match("^%x+$") then
-				hex = h
-				name = content:sub(10)
-			end
-		end
-		-- Check 8-char hex prefix (used in test cases)
-		if not hex and #content > 8 then
-			local h = content:sub(1, 8)
-			if h:match("^%x+$") then
-				hex = h
-				name = content:sub(9)
-			end
-		end
-		-- Fallback
-		if not hex then
-			local h, n = content:match("^(%x+)(.*)$")
-			if h and h ~= "" then
-				hex = h
-				name = n
-			end
-		end
-
-		if hex and name and name ~= "" then
+		local fullLink = "\x12" .. content .. "\x12"
+		local hex, name = parseSingleLink(fullLink)
+		if hex and name then
 			table.insert(items, {
 				name = name,
-				link = "\x12" .. hex .. name .. "\x12",
+				link = fullLink,
 				hex = hex,
 				isLink = true
 			})
 			-- Remove the link from the remaining text to avoid duplicate parsing
-			remaining = remaining:gsub("\x12" .. hex .. name .. "\x12", "")
+			remaining = remaining:gsub(fullLink, "")
 		end
 	end
 
@@ -351,7 +354,7 @@ local function parseMessageItems(message)
 				-- Query MQ's LinkDB to see if it is a real item and can be upgraded
 				local eqLink = mq.TLO.LinkDB(string.format('=%s', name))()
 				if eqLink and eqLink ~= "" then
-					local hexStr, cleanName = eqLink:match("\x12(%x+)([^\x12]+)\x12")
+					local hexStr, cleanName = parseSingleLink(eqLink)
 					if hexStr and cleanName then
 						table.insert(items, {
 							name = cleanName,
