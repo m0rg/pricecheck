@@ -3,6 +3,10 @@ local ImGui = require("ImGui")
 
 local ui = {}
 
+-- Calculate timezone bias once at load time (DST-safe for current execution session)
+local now = os.time()
+local timezoneBias = os.difftime(now, os.time(os.date("!*t", now)))
+
 -- Helper function to parse ISO 8601 UTC date string into a local Unix timestamp
 local function parseISOTimestamp(str)
 	if not str then
@@ -16,10 +20,6 @@ local function parseISOTimestamp(str)
 
 	-- Create UTC time table (interpreted as local by os.time)
 	local utcTime = os.time({ year = year, month = month, day = day, hour = hour, min = min, sec = sec })
-
-	-- Calculate timezone bias to shift UTC to your local system time (DST-safe)
-	local now = os.time()
-	local timezoneBias = os.difftime(now, os.time(os.date("!*t", now)))
 
 	return utcTime + timezoneBias
 end
@@ -91,6 +91,18 @@ function ui.getInventoryItems()
 		end
 	end
 	return items
+end
+
+-- Helper function to return inventory and bank counts of an item (DRY consolidated)
+function ui.getItemCounts(itemName)
+	if not itemName or itemName == "" then
+		return 0, 0
+	end
+	local countObj = mq.TLO.FindItemCount(string.format('=%s', itemName))
+	local count = (countObj and countObj()) or 0
+	local bankObj = mq.TLO.FindItemBankCount(string.format('=%s', itemName))
+	local bankCount = (bankObj and bankObj()) or 0
+	return count, bankCount
 end
 
 
@@ -166,8 +178,7 @@ local function generateItemSegments(state, useLinks)
 			local itemName = (entry.data and entry.data.item) or entry.item
 			local listedPrice = entry.listedPrice or 0
 
-			local countObj = mq.TLO.FindItemCount(string.format('=%s', itemName))
-			local count = (countObj and countObj()) or 1
+			local count = ui.getItemCounts(itemName)
 			if count == 0 then
 				count = 1
 			end
@@ -608,10 +619,7 @@ function ui.render(state)
 					local i = 1
 					while i <= #state.priceHistory do
 						local entry = state.priceHistory[i]
-						local countObj = mq.TLO.FindItemCount(string.format('=%s', entry.item))
-						local count = (countObj and countObj()) or 0
-						local bankObj = mq.TLO.FindItemBankCount(string.format('=%s', entry.item))
-						local bankCount = (bankObj and bankObj()) or 0
+						local count, bankCount = ui.getItemCounts(entry.item)
 						if count + bankCount == 0 then
 							if state.activeDetailEntry == entry then
 								state.activeDetailEntry = nil
@@ -684,12 +692,8 @@ function ui.render(state)
 									valA = valA:lower()
 									valB = valB:lower()
 								elseif spec.ColumnIndex == 2 then
-									local countObjA = mq.TLO.FindItemCount(string.format('=%s', a.item))
-									local countA = (countObjA and countObjA()) or 0
-									valA = countA
-									local countObjB = mq.TLO.FindItemCount(string.format('=%s', b.item))
-									local countB = (countObjB and countObjB()) or 0
-									valB = countB
+									valA = ui.getItemCounts(a.item)
+									valB = ui.getItemCounts(b.item)
 								elseif spec.ColumnIndex == 3 then
 									valA = (a.status == "Success" and a.data and a.data.sellAverage) or -1
 									valB = (b.status == "Success" and b.data and b.data.sellAverage) or -1
@@ -764,10 +768,7 @@ function ui.render(state)
 
 						-- Column 2: Qty (Bank)
 						ImGui.TableSetColumnIndex(2)
-						local countObj = mq.TLO.FindItemCount(string.format('=%s', entry.item))
-						local count = (countObj and countObj()) or 0
-						local bankObj = mq.TLO.FindItemBankCount(string.format('=%s', entry.item))
-						local bankCount = (bankObj and bankObj()) or 0
+						local count, bankCount = ui.getItemCounts(entry.item)
 						ImGui.Text(string.format("%d (%d)", count, bankCount))
 
 						-- Column 3: Avg Sell

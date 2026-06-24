@@ -112,10 +112,7 @@ local function filterZeroQtyHistory(history)
 			if not entry.id or entry.id == "" then
 				entry.id = tostring(os.clock() + math.random() + i):gsub("%.", "")
 			end
-			local countObj = mq.TLO.FindItemCount(string.format('=%s', entry.item))
-			local count = (countObj and countObj()) or 0
-			local bankObj = mq.TLO.FindItemBankCount(string.format('=%s', entry.item))
-			local bankCount = (bankObj and bankObj()) or 0
+			local count, bankCount = ui.getItemCounts(entry.item)
 			if count + bankCount == 0 then
 				table.remove(history, i)
 			else
@@ -127,6 +124,8 @@ local function filterZeroQtyHistory(history)
 		else
 			table.remove(history, i)
 		end
+		-- Yield every frame to completely prevent startup freezing (KISS delay trap fix)
+		mq.delay(1)
 	end
 	return history
 end
@@ -233,6 +232,7 @@ while state.openGUI do
 
 			saveHistory()
 		end
+		mq.delay(100)
 	elseif #state.bulkQueue > 0 then
 		local ids = state.bulkQueue
 		state.bulkQueue = {}
