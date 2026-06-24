@@ -412,7 +412,214 @@ function ui.render(state)
 		ImGui.Separator()
 
 		if ImGui.BeginTabBar("PriceCheckTabBar") then
-			if ImGui.BeginTabItem("Search & Sales") then
+			if ImGui.BeginTabItem("Your Items") then
+				-- ----------------------------------------------------
+				-- SECTION 4: Bulk Price Check Table & Actions
+				-- ----------------------------------------------------
+				local canBulkSearch = not state.isBulkSearching and (#state.bulkQueue == 0)
+				if not canBulkSearch then
+					ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
+				end
+				if ImGui.Button(state.isBulkSearching and "Pricing Inventory..." or "BULK PRICE CHECK", -1, 30) and canBulkSearch then
+					local items = ui.getInventoryItems()
+					state.bulkPriceHistory = {}
+					state.bulkQueue = {}
+
+					-- Populate bulkPriceHistory with placeholder entries and collect IDs
+					local ids = {}
+					for _, item in ipairs(items) do
+						table.insert(ids, item.id)
+						table.insert(state.bulkPriceHistory, {
+							itemId = item.id,
+							item = item.name,
+							medianPlatPrice = nil,
+							hasData = false,
+							status = "Searching...",
+						})
+					end
+
+					state.bulkQueue = ids
+					state.isBulkSearching = (#ids > 0)
+				end
+				if not canBulkSearch then
+					ImGui.PopStyleVar()
+				end
+
+				if state.bulkLastUpdated or state.bulkKronoRate then
+					ImGui.Spacing()
+					if state.bulkLastUpdated then
+						local localTime = parseISOTimestamp(state.bulkLastUpdated)
+						local readableTime = "Unknown"
+						if localTime then
+							readableTime = os.date("%Y-%m-%d %H:%M:%S", localTime) .. " (" .. getRelativeTimeString(state.bulkLastUpdated) .. ")"
+						end
+						ImGui.TextColored(0.4, 0.8, 1.0, 1.0, "Last Updated: " .. readableTime)
+					end
+					if state.bulkKronoRate then
+						ImGui.TextColored(1.0, 0.8, 0.2, 1.0, "Current Krono Price: " .. formatNumber(state.bulkKronoRate) .. " pp")
+					end
+					ImGui.Spacing()
+				end
+
+				ImGui.Separator()
+				ImGui.Text("BULK Price History:")
+				ImGui.SameLine(ImGui.GetWindowWidth() - 90)
+				if ImGui.Button("Clear##Bulk", 75, 0) then
+					state.bulkPriceHistory = {}
+					state.bulkLastUpdated = nil
+					state.bulkKronoRate = nil
+				end
+
+				local flags = bit32.bor(
+					ImGuiTableFlags.Borders,
+					ImGuiTableFlags.RowBg,
+					ImGuiTableFlags.Resizable,
+					ImGuiTableFlags.ScrollY,
+					ImGuiTableFlags.Sortable
+				)
+
+				if ImGui.BeginTable("BulkHistoryTable", 4, flags, 0, 0) then
+					ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
+					ImGui.TableSetupColumn("Median Price", ImGuiTableColumnFlags.WidthFixed, 100)
+					ImGui.TableSetupColumn("Vendor Sell", ImGuiTableColumnFlags.WidthFixed, 100)
+					ImGui.TableSetupColumn("Add", bit32.bor(ImGuiTableColumnFlags.WidthFixed, ImGuiTableColumnFlags.NoSort), 45)
+					ImGui.TableHeadersRow()
+
+					local sortSpecs = ImGui.TableGetSortSpecs()
+					if sortSpecs and sortSpecs.SpecsDirty then
+						local spec = sortSpecs:Specs(1)
+						if spec then
+							table.sort(state.bulkPriceHistory, function(a, b)
+								local valA, valB
+
+								if spec.ColumnIndex == 0 then
+									valA = (a.item or ""):lower()
+									valB = (b.item or ""):lower()
+								elseif spec.ColumnIndex == 1 then
+									valA = (a.status == "Success" and a.hasData and a.medianPlatPrice) or -1
+									valB = (b.status == "Success" and b.hasData and b.medianPlatPrice) or -1
+								elseif spec.ColumnIndex == 2 then
+									local itemObjA = mq.TLO.FindItem(string.format('=%s', a.item))
+									local valObjA = 0
+									if itemObjA and itemObjA() then
+										valObjA = itemObjA.Value() or 0
+									end
+									valA = valObjA
+
+									local itemObjB = mq.TLO.FindItem(string.format('=%s', b.item))
+									local valObjB = 0
+									if itemObjB and itemObjB() then
+										valObjB = itemObjB.Value() or 0
+									end
+									valB = valObjB
+								else
+									return false
+								end
+
+								if spec.SortDirection == ImGuiSortDirection.Ascending then
+									return valA < valB
+								else
+									return valA > valB
+								end
+							end)
+						end
+						sortSpecs.SpecsDirty = false
+					end
+
+					for index, entry in ipairs(state.bulkPriceHistory) do
+						ImGui.TableNextRow()
+
+						-- Pre-calculate vendor sell price and check if it is higher/equal to market median price
+						local itemObj = mq.TLO.FindItem(string.format('=%s', entry.item))
+						local vValue = 0
+						if itemObj and itemObj() then
+							vValue = itemObj.Value() or 0
+						end
+
+						local isVendorBetter = false
+						if entry.status == "Success" and entry.hasData and entry.medianPlatPrice then
+							local vendorPlatPrice = vValue / 1000
+							if vendorPlatPrice >= entry.medianPlatPrice then
+								isVendorBetter = true
+							end
+						end
+
+						-- Column 0: Item Name
+						ImGui.TableSetColumnIndex(0)
+						if isVendorBetter then
+							ImGui.TextColored(1.0, 0.8, 0.2, 1.0, entry.item) -- Highlight item name in gold
+							if ImGui.IsItemHovered() then
+								ImGui.BeginTooltip()
+								ImGui.Text("Vendor sell price is higher or equal to market median price!")
+								ImGui.EndTooltip()
+							end
+						else
+							ImGui.Text(entry.item)
+						end
+
+						-- Column 1: Median Price / Status
+						ImGui.TableSetColumnIndex(1)
+						if entry.status == "Searching..." then
+							ImGui.TextColored(1.0, 0.8, 0.2, 1.0, entry.status)
+						elseif entry.status == "Success" then
+							if entry.hasData and entry.medianPlatPrice then
+								ImGui.TextColored(0.4, 1.0, 0.4, 1.0, string.format("%s pp", formatNumber(math.floor(entry.medianPlatPrice))))
+							else
+								ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "No price found")
+							end
+						elseif entry.status == "Not Checked" then
+							ImGui.TextColored(0.6, 0.6, 0.6, 1.0, "-")
+						else
+							ImGui.TextColored(1.0, 0.3, 0.3, 1.0, entry.status or "N/A")
+						end
+
+						-- Column 2: Vendor Sell Price
+						ImGui.TableSetColumnIndex(2)
+						if vValue > 0 then
+							if isVendorBetter then
+								ImGui.TextColored(0.4, 1.0, 0.4, 1.0, formatVendorPrice(vValue)) -- Highlight vendor price in green if it's better
+							else
+								ImGui.TextColored(0.7, 0.7, 0.7, 1.0, formatVendorPrice(vValue))
+							end
+						else
+							ImGui.Text("-")
+						end
+
+						-- Column 3: Add Button / Lootly Button
+						ImGui.TableSetColumnIndex(3)
+						if isVendorBetter then
+							if ImGui.Button("SetItem##" .. index, -1, 18) then
+								mq.cmd(string.format('/setitem sell "%s"', entry.item))
+							end
+						elseif entry.status == "Success" and entry.hasData and entry.medianPlatPrice then
+							local isSearchingThis = false
+							for _, hEntry in ipairs(state.priceHistory) do
+								if hEntry.item:lower() == entry.item:lower() then
+									if hEntry.status == "Searching..." then
+										isSearchingThis = true
+									end
+									break
+								end
+							end
+
+							if isSearchingThis then
+								ImGui.TextColored(1.0, 0.8, 0.2, 1.0, "...")
+							else
+								if ImGui.Button("+##bulk_add_" .. index, -1, 18) then
+									queueSearch(state, entry.item)
+								end
+							end
+						else
+							ImGui.Text("-")
+						end
+					end
+					ImGui.EndTable()
+				end
+
+				ImGui.EndTabItem()
+			end
+
+			if ImGui.BeginTabItem("Trade") then
 				-- ----------------------------------------------------
 				-- SECTION 2: Sales String Generation
 				-- ----------------------------------------------------
@@ -732,214 +939,7 @@ function ui.render(state)
 				ImGui.EndTabItem()
 			end
 
-			if ImGui.BeginTabItem("Bulk Inventory Check") then
-				-- ----------------------------------------------------
-				-- SECTION 4: Bulk Price Check Table & Actions
-				-- ----------------------------------------------------
-				local canBulkSearch = not state.isBulkSearching and (#state.bulkQueue == 0)
-				if not canBulkSearch then
-					ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
-				end
-				if ImGui.Button(state.isBulkSearching and "Pricing Inventory..." or "BULK PRICE CHECK", -1, 30) and canBulkSearch then
-					local items = ui.getInventoryItems()
-					state.bulkPriceHistory = {}
-					state.bulkQueue = {}
-
-					-- Populate bulkPriceHistory with placeholder entries and collect IDs
-					local ids = {}
-					for _, item in ipairs(items) do
-						table.insert(ids, item.id)
-						table.insert(state.bulkPriceHistory, {
-							itemId = item.id,
-							item = item.name,
-							medianPlatPrice = nil,
-							hasData = false,
-							status = "Searching...",
-						})
-					end
-
-					state.bulkQueue = ids
-					state.isBulkSearching = (#ids > 0)
-				end
-				if not canBulkSearch then
-					ImGui.PopStyleVar()
-				end
-
-				if state.bulkLastUpdated or state.bulkKronoRate then
-					ImGui.Spacing()
-					if state.bulkLastUpdated then
-						local localTime = parseISOTimestamp(state.bulkLastUpdated)
-						local readableTime = "Unknown"
-						if localTime then
-							readableTime = os.date("%Y-%m-%d %H:%M:%S", localTime) .. " (" .. getRelativeTimeString(state.bulkLastUpdated) .. ")"
-						end
-						ImGui.TextColored(0.4, 0.8, 1.0, 1.0, "Last Updated: " .. readableTime)
-					end
-					if state.bulkKronoRate then
-						ImGui.TextColored(1.0, 0.8, 0.2, 1.0, "Current Krono Price: " .. formatNumber(state.bulkKronoRate) .. " pp")
-					end
-					ImGui.Spacing()
-				end
-
-				ImGui.Separator()
-				ImGui.Text("BULK Price History:")
-				ImGui.SameLine(ImGui.GetWindowWidth() - 90)
-				if ImGui.Button("Clear##Bulk", 75, 0) then
-					state.bulkPriceHistory = {}
-					state.bulkLastUpdated = nil
-					state.bulkKronoRate = nil
-				end
-
-				local flags = bit32.bor(
-					ImGuiTableFlags.Borders,
-					ImGuiTableFlags.RowBg,
-					ImGuiTableFlags.Resizable,
-					ImGuiTableFlags.ScrollY,
-					ImGuiTableFlags.Sortable
-				)
-
-				if ImGui.BeginTable("BulkHistoryTable", 4, flags, 0, 0) then
-					ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
-					ImGui.TableSetupColumn("Median Price", ImGuiTableColumnFlags.WidthFixed, 100)
-					ImGui.TableSetupColumn("Vendor Sell", ImGuiTableColumnFlags.WidthFixed, 100)
-					ImGui.TableSetupColumn("Add", bit32.bor(ImGuiTableColumnFlags.WidthFixed, ImGuiTableColumnFlags.NoSort), 45)
-					ImGui.TableHeadersRow()
-
-					local sortSpecs = ImGui.TableGetSortSpecs()
-					if sortSpecs and sortSpecs.SpecsDirty then
-						local spec = sortSpecs:Specs(1)
-						if spec then
-							table.sort(state.bulkPriceHistory, function(a, b)
-								local valA, valB
-
-								if spec.ColumnIndex == 0 then
-									valA = (a.item or ""):lower()
-									valB = (b.item or ""):lower()
-								elseif spec.ColumnIndex == 1 then
-									valA = (a.status == "Success" and a.hasData and a.medianPlatPrice) or -1
-									valB = (b.status == "Success" and b.hasData and b.medianPlatPrice) or -1
-								elseif spec.ColumnIndex == 2 then
-									local itemObjA = mq.TLO.FindItem(string.format('=%s', a.item))
-									local valObjA = 0
-									if itemObjA and itemObjA() then
-										valObjA = itemObjA.Value() or 0
-									end
-									valA = valObjA
-
-									local itemObjB = mq.TLO.FindItem(string.format('=%s', b.item))
-									local valObjB = 0
-									if itemObjB and itemObjB() then
-										valObjB = itemObjB.Value() or 0
-									end
-									valB = valObjB
-								else
-									return false
-								end
-
-								if spec.SortDirection == ImGuiSortDirection.Ascending then
-									return valA < valB
-								else
-									return valA > valB
-								end
-							end)
-						end
-						sortSpecs.SpecsDirty = false
-					end
-
-					for index, entry in ipairs(state.bulkPriceHistory) do
-						ImGui.TableNextRow()
-
-						-- Pre-calculate vendor sell price and check if it is higher/equal to market median price
-						local itemObj = mq.TLO.FindItem(string.format('=%s', entry.item))
-						local vValue = 0
-						if itemObj and itemObj() then
-							vValue = itemObj.Value() or 0
-						end
-
-						local isVendorBetter = false
-						if entry.status == "Success" and entry.hasData and entry.medianPlatPrice then
-							local vendorPlatPrice = vValue / 1000
-							if vendorPlatPrice >= entry.medianPlatPrice then
-								isVendorBetter = true
-							end
-						end
-
-						-- Column 0: Item Name
-						ImGui.TableSetColumnIndex(0)
-						if isVendorBetter then
-							ImGui.TextColored(1.0, 0.8, 0.2, 1.0, entry.item) -- Highlight item name in gold
-							if ImGui.IsItemHovered() then
-								ImGui.BeginTooltip()
-								ImGui.Text("Vendor sell price is higher or equal to market median price!")
-								ImGui.EndTooltip()
-							end
-						else
-							ImGui.Text(entry.item)
-						end
-
-						-- Column 1: Median Price / Status
-						ImGui.TableSetColumnIndex(1)
-						if entry.status == "Searching..." then
-							ImGui.TextColored(1.0, 0.8, 0.2, 1.0, entry.status)
-						elseif entry.status == "Success" then
-							if entry.hasData and entry.medianPlatPrice then
-								ImGui.TextColored(0.4, 1.0, 0.4, 1.0, string.format("%s pp", formatNumber(math.floor(entry.medianPlatPrice))))
-							else
-								ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "No price found")
-							end
-						elseif entry.status == "Not Checked" then
-							ImGui.TextColored(0.6, 0.6, 0.6, 1.0, "-")
-						else
-							ImGui.TextColored(1.0, 0.3, 0.3, 1.0, entry.status or "N/A")
-						end
-
-						-- Column 2: Vendor Sell Price
-						ImGui.TableSetColumnIndex(2)
-						if vValue > 0 then
-							if isVendorBetter then
-								ImGui.TextColored(0.4, 1.0, 0.4, 1.0, formatVendorPrice(vValue)) -- Highlight vendor price in green if it's better
-							else
-								ImGui.TextColored(0.7, 0.7, 0.7, 1.0, formatVendorPrice(vValue))
-							end
-						else
-							ImGui.Text("-")
-						end
-
-						-- Column 3: Add Button / Lootly Button
-						ImGui.TableSetColumnIndex(3)
-						if isVendorBetter then
-							if ImGui.Button("SetItem##" .. index, -1, 18) then
-								mq.cmd(string.format('/setitem sell "%s"', entry.item))
-							end
-						elseif entry.status == "Success" and entry.hasData and entry.medianPlatPrice then
-							local isSearchingThis = false
-							for _, hEntry in ipairs(state.priceHistory) do
-								if hEntry.item:lower() == entry.item:lower() then
-									if hEntry.status == "Searching..." then
-										isSearchingThis = true
-									end
-									break
-								end
-							end
-
-							if isSearchingThis then
-								ImGui.TextColored(1.0, 0.8, 0.2, 1.0, "...")
-							else
-								if ImGui.Button("+##bulk_add_" .. index, -1, 18) then
-									queueSearch(state, entry.item)
-								end
-							end
-						else
-							ImGui.Text("-")
-						end
-					end
-					ImGui.EndTable()
-				end
-
-				ImGui.EndTabItem()
-			end
-
-			if ImGui.BeginTabItem("Tells") then
+			if ImGui.BeginTabItem("Communication") then
 				ImGui.TextColored(0.4, 0.8, 1.0, 1.0, "Tells Received Log:")
 				ImGui.Separator()
 				ImGui.Spacing()
