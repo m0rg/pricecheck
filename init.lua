@@ -193,6 +193,90 @@ mq.event('TellEvent', '#1# tells you, \'#2#', function(line, sender, message)
 	end
 end)
 
+-- Helper function to clean and validate plain-text item names
+local function cleanAndValidateName(sub)
+	sub = sub:match("^%s*(.-)%s*$")
+	if sub == "" then return nil end
+
+	-- Ensure it starts with an alphanumeric character
+	if not sub:match("^%w") then
+		return nil
+	end
+
+	-- Strip leading command/verb words: wts, wtb, selling, sell, wtt, buy, buying
+	local lowerSub = sub:lower()
+	local clean = sub
+	local prefixes = { "wts%s+", "wtb%s+", "selling%s+", "sell%s+", "wtt%s+", "buy%s+", "buying%s+" }
+	for _, pref in ipairs(prefixes) do
+		local startIdx, endIdx = lowerSub:find("^" .. pref)
+		if startIdx then
+			clean = sub:sub(endIdx + 1)
+			lowerSub = clean:lower()
+			break
+		end
+	end
+
+	clean = clean:match("^%s*(.-)%s*$")
+
+	-- Strip trailing prices and common suffixes (e.g. 75, 9k, 1500p, 10kr, pst, obo)
+	clean = clean:gsub("%s+%d+%s*[kKpP]*%s*[lLrR]*%s*$", "")
+	clean = clean:gsub("%s+%d+%s*[kK]*[rR]*%s*$", "")
+	clean = clean:gsub("%s+%d+pp%s*$", "")
+	clean = clean:gsub("%s+%d+p%s*$", "")
+	clean = clean:gsub("%s+%d+kr%s*$", "")
+	clean = clean:gsub("%s+pst%s*$", "")
+	clean = clean:gsub("%s+obo%s*$", "")
+	clean = clean:gsub("%s+each%s*$", "")
+	clean = clean:gsub("%s+ea%s*$", "")
+
+	-- Strip trailing exclamation marks/spaces
+	clean = clean:gsub("[%s!]+$", "")
+	clean = clean:match("^%s*(.-)%s*$")
+
+	local lowerClean = clean:lower()
+
+	-- Strict blocklist to filter out non-items
+	local blocklist = {
+		"loot", "rights", "fight", "help", "bags", "items", "plat", "service",
+		"level", "port", "taxi", "buff", "mob", "clear", "guild", "recruit",
+		"track", "powerlevel", "pl ", " pl", "mobs", "send tell", "tell", "pm ",
+		"pm me", "msg", "price", "offer", "trade", "sell", "buy ", " buying", "wtt",
+		"deliver", "parcel", "bazaar", "barter", "tunnel", "ec ", "commonlands",
+		"c/o", "buyout", "minimum", " bid", "wts", "wtb"
+	}
+
+	for _, block in ipairs(blocklist) do
+		if lowerClean:find(block, 1, true) then
+			return nil
+		end
+	end
+
+	-- Reject colons unless it's a standard class/spell indicator (e.g. Spell: Song: Tome:)
+	if clean:find(":", 1, true) then
+		local prefix = clean:match("^([%a]+):")
+		if prefix then
+			local prefLower = prefix:lower()
+			if prefLower ~= "spell" and prefLower ~= "tome" and prefLower ~= "song" and prefLower ~= "scroll" and prefLower ~= "item" then
+				return nil
+			end
+		else
+			return nil
+		end
+	end
+
+	-- Item name must have a reasonable length (between 3 and 50 characters)
+	if #clean < 3 or #clean > 50 then
+		return nil
+	end
+
+	-- Reject if it's just numbers
+	if clean:match("^%d+$") then
+		return nil
+	end
+
+	return clean
+end
+
 -- Helper function to extract both item links and plain-text item names from an auction message
 local function parseMessageItems(message)
 	local items = {}
@@ -250,59 +334,43 @@ local function parseMessageItems(message)
 	end
 
 	-- 2. Parse remaining plain text for item names
-	-- Split by comma, semicolon, or newlines
-	for part in string.gmatch(remaining, "([^,;\n\r]+)") do
+	-- Normalize delimiters: replace common delimiters with commas to simplify splitting
+	local text = remaining
+	text = text:gsub("%s+/%s+", ",")
+	text = text:gsub("%s+%+%s+", ",")
+	text = text:gsub("%s+or%s+", ",")
+	text = text:gsub("%s+and%s+", ",")
+	text = text:gsub("%s+-%s+", ",")
+	text = text:gsub("%s*%-%-%s*", ",")
+
+	for part in string.gmatch(text, "([^,;\n\r]+)") do
 		part = part:match("^%s*(.-)%s*$")
-		
-		-- Further split by " - " (hyphen with spaces) if present
-		local subParts = {}
-		if string.find(part, " - ", 1, true) then
-			for sub in string.gmatch(part, "[^%-]+") do
-				table.insert(subParts, sub)
-			end
-		else
-			table.insert(subParts, part)
-		end
-
-		for _, sub in ipairs(subParts) do
-			sub = sub:match("^%s*(.-)%s*$")
-			if sub ~= "" then
-				-- Strip leading command/verb words: wts, wtb, selling, sell, wtt, buy, buying
-				local lowerSub = sub:lower()
-				local clean = sub
-				local prefixes = { "wts%s+", "wtb%s+", "selling%s+", "sell%s+", "wtt%s+", "buy%s+", "buying%s+" }
-				for _, pref in ipairs(prefixes) do
-					local startIdx, endIdx = lowerSub:find("^" .. pref)
-					if startIdx then
-						clean = sub:sub(endIdx + 1)
-						break
+		if part ~= "" then
+			local name = cleanAndValidateName(part)
+			if name then
+				-- Query MQ's LinkDB to see if it is a real item and can be upgraded
+				local eqLink = mq.TLO.LinkDB(string.format('=%s', name))()
+				if eqLink and eqLink ~= "" then
+					local hexStr, cleanName = eqLink:match("\x12(%x+)([^\x12]+)\x12")
+					if hexStr and cleanName then
+						table.insert(items, {
+							name = cleanName,
+							link = eqLink,
+							hex = hexStr,
+							isLink = true
+						})
+					else
+						table.insert(items, {
+							name = name,
+							link = nil,
+							hex = nil,
+							isLink = false
+						})
 					end
-				end
-
-				clean = clean:match("^%s*(.-)%s*$")
-
-				-- Strip trailing prices and common suffixes (e.g. 75, 9k, 1500p, 10kr, pst, obo)
-				clean = clean:gsub("%s+%d+%s*[kKpP]*%s*[lLrR]*%s*$", "")
-				clean = clean:gsub("%s+%d+%s*[kK]*[rR]*%s*$", "")
-				clean = clean:gsub("%s+%d+pp%s*$", "")
-				clean = clean:gsub("%s+%d+p%s*$", "")
-				clean = clean:gsub("%s+%d+kr%s*$", "")
-				clean = clean:gsub("%s+pst%s*$", "")
-				clean = clean:gsub("%s+obo%s*$", "")
-
-				-- Strip trailing exclamation marks/spaces
-				clean = clean:gsub("[%s!]+$", "")
-				clean = clean:match("^%s*(.-)%s*$")
-
-				-- Filter out noise words or very short strings
-				local lowerClean = clean:lower()
-				if #clean >= 3 and #clean <= 50 and 
-				   lowerClean ~= "send tell" and 
-				   lowerClean ~= "pst" and 
-				   lowerClean ~= "obo" and
-				   not lowerClean:match("^%s*$") then
+				else
+					-- Not found in LinkDB, insert as plain text
 					table.insert(items, {
-						name = clean,
+						name = name,
 						link = nil,
 						hex = nil,
 						isLink = false
