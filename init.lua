@@ -170,8 +170,19 @@ saveHistory()
 saveConfig()
 
 -- Register event listener for incoming tells
-mq.event('TellEvent', '#1# tells you, \'#2#\'', function(line, sender, message)
+mq.event('TellEvent', '#1# tells you, \'#2#', function(line, sender, message)
 	if sender and message then
+		-- Filter out self-tells
+		local myName = mq.TLO.Me.CleanName()
+		if myName and sender:lower() == myName:lower() then
+			return
+		end
+
+		-- Clean up the trailing single quote
+		if message:sub(-1) == "'" then
+			message = message:sub(1, -2)
+		end
+
 		table.insert(state.receivedTells, {
 			sender = sender,
 			message = message,
