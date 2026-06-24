@@ -2,102 +2,24 @@ local ImGui = require("ImGui")
 
 local ui = {}
 
--- Calculate timezone bias once at load time (DST-safe for current execution session)
-local now = os.time()
-local timezoneBias = os.difftime(now, os.time(os.date("!*t", now)))
-
--- Helper function to parse ISO 8601 UTC date string into a local Unix timestamp
-local function parseISOTimestamp(str)
-	if not str then
-		return nil
-	end
-	-- Pattern matches: YYYY-MM-DDTHH:MM:SS
-	local year, month, day, hour, min, sec = str:match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)")
-	if not year then
-		return nil
-	end
-
-	-- Create UTC time table (interpreted as local by os.time)
-	local utcTime = os.time({ year = year, month = month, day = day, hour = hour, min = min, sec = sec })
-
-	return utcTime + timezoneBias
-end
-
--- Helper function to format numbers with thousands separators
-local function formatNumber(amount)
-	if not amount then
-		return "N/A"
-	end
-	local formatted = tostring(amount)
-	while true do
-		local k
-		formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1,%2')
-		if k == 0 then
-			break
-		end
-	end
-	return formatted
-end
-
--- Helper function to format vendor price in gold/silver/copper
-local function formatVendorPrice(value)
-	if not value or value <= 0 then
-		return "-"
-	end
-	local plat = math.floor(value / 1000)
-	local remainder = value % 1000
-	local gold = math.floor(remainder / 100)
-	remainder = remainder % 100
-	local silver = math.floor(remainder / 10)
-	local copper = remainder % 10
-
-	local parts = {}
-	if plat > 0 then table.insert(parts, plat .. "p") end
-	if gold > 0 then table.insert(parts, gold .. "g") end
-	if silver > 0 then table.insert(parts, silver .. "s") end
-	if copper > 0 then table.insert(parts, copper .. "c") end
-
-	return table.concat(parts, " ")
-end
+-- Pure formatting and calculation utilities delegated to util.lua
 
 local char
 local dto
 local chat
+local util
 
--- Injects character, data transfer, and chat dependencies (SRP)
-function ui.setup(charModule, dtoModule, chatModule)
+-- Injects character, data transfer, chat, and utility dependencies (SRP)
+function ui.setup(charModule, dtoModule, chatModule, utilModule)
 	char = charModule
 	dto = dtoModule
 	chat = chatModule
+	util = utilModule
 end
 
 
 
--- Helper function to output a clean, human-readable relative string
-local function getRelativeTimeString(isoStr)
-	local pastTime = parseISOTimestamp(isoStr)
-	if not pastTime then
-		return "Unknown time"
-	end
-
-	local diff = os.difftime(os.time(), pastTime)
-	if diff < 0 then
-		diff = 0
-	end -- Clamp future time sync deviations
-
-	if diff < 60 then
-		return "Just now"
-	elseif diff < 3600 then
-		local mins = math.floor(diff / 60)
-		return string.format("%dm ago", mins)
-	elseif diff < 86400 then
-		local hours = math.floor(diff / 3600)
-		return string.format("%dh ago", hours)
-	else
-		local days = math.floor(diff / 86400)
-		return string.format("%dd ago", days)
-	end
-end
+-- Date relative helper delegated to util.lua
 
 -- Helper function to extract price statistics from detailed lists
 local function getPriceStats(entry)
@@ -266,7 +188,7 @@ local function renderDetailsTooltip(entry)
 				ImGui.TableSetColumnIndex(2)
 				ImGui.Text(tostring(log.kronoPrice or 0))
 				ImGui.TableSetColumnIndex(3)
-				ImGui.TextColored(0.7, 0.7, 0.7, 1.0, getRelativeTimeString(log.datetime))
+				ImGui.TextColored(0.7, 0.7, 0.7, 1.0, util.getRelativeTimeString(log.datetime))
 			end
 			ImGui.EndTable()
 		end
@@ -332,7 +254,7 @@ function ui.render(state)
 					ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
 				end
 				if ImGui.Button(state.isBulkSearching and "Pricing Inventory..." or "BULK PRICE CHECK", -1, 30) and canBulkSearch then
-					local items = char.getInventoryItems()
+					local items = char.getUniqueInventoryItemTypes()
 					state.bulkPriceHistory = {}
 					state.bulkQueue = {}
 
@@ -359,15 +281,15 @@ function ui.render(state)
 				if state.bulkLastUpdated or state.bulkKronoRate then
 					ImGui.Spacing()
 					if state.bulkLastUpdated then
-						local localTime = parseISOTimestamp(state.bulkLastUpdated)
+						local localTime = util.parseISOTimestamp(state.bulkLastUpdated)
 						local readableTime = "Unknown"
 						if localTime then
-							readableTime = os.date("%Y-%m-%d %H:%M:%S", localTime) .. " (" .. getRelativeTimeString(state.bulkLastUpdated) .. ")"
+							readableTime = os.date("%Y-%m-%d %H:%M:%S", localTime) .. " (" .. util.getRelativeTimeString(state.bulkLastUpdated) .. ")"
 						end
 						ImGui.TextColored(0.4, 0.8, 1.0, 1.0, "Last Updated: " .. readableTime)
 					end
 					if state.bulkKronoRate then
-						ImGui.TextColored(1.0, 0.8, 0.2, 1.0, "Current Krono Price: " .. formatNumber(state.bulkKronoRate) .. " pp")
+						ImGui.TextColored(1.0, 0.8, 0.2, 1.0, "Current Krono Price: " .. util.formatNumber(state.bulkKronoRate) .. " pp")
 					end
 					ImGui.Spacing()
 				end
@@ -459,7 +381,7 @@ function ui.render(state)
 							ImGui.TextColored(1.0, 0.8, 0.2, 1.0, entry.status)
 						elseif entry.status == "Success" then
 							if entry.hasData and entry.medianPlatPrice then
-								ImGui.TextColored(0.4, 1.0, 0.4, 1.0, string.format("%s pp", formatNumber(math.floor(entry.medianPlatPrice))))
+								ImGui.TextColored(0.4, 1.0, 0.4, 1.0, string.format("%s pp", util.formatNumber(math.floor(entry.medianPlatPrice))))
 							else
 								ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "No price found")
 							end
@@ -473,9 +395,9 @@ function ui.render(state)
 						ImGui.TableSetColumnIndex(2)
 						if vValue > 0 then
 							if isVendorBetter then
-								ImGui.TextColored(0.4, 1.0, 0.4, 1.0, formatVendorPrice(vValue)) -- Highlight vendor price in green if it's better
+								ImGui.TextColored(0.4, 1.0, 0.4, 1.0, util.formatVendorPrice(vValue)) -- Highlight vendor price in green if it's better
 							else
-								ImGui.TextColored(0.7, 0.7, 0.7, 1.0, formatVendorPrice(vValue))
+								ImGui.TextColored(0.7, 0.7, 0.7, 1.0, util.formatVendorPrice(vValue))
 							end
 						else
 							ImGui.Text("-")

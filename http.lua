@@ -1,6 +1,9 @@
 local PackageMan = require("mq/PackageMan")
-local https = require("ssl.https")
+local mq = require("mq")
 local json = PackageMan.Require("lua-cjson", "cjson")
+local ltn12 = require("ltn12")
+
+local ssl_ok, https = pcall(require, "ssl.https")
 
 local http = {}
 
@@ -15,8 +18,14 @@ function http.urlEncode(str)
 	return str
 end
 
--- Function to execute the HTTP request (run only in the main script loop)
 function http.performSearch(itemName, onComplete)
+	if not ssl_ok or not https then
+		if onComplete then
+			onComplete(false, nil, "SSL Library Missing")
+		end
+		return
+	end
+
 	if not itemName or itemName == "" then
 		if onComplete then
 			onComplete(false, nil, "Invalid Name")
@@ -66,6 +75,13 @@ end
 
 -- Function to execute bulk HTTP request (run only in main script loop)
 function http.performBulkSearch(itemIds, onComplete)
+	if not ssl_ok or not https then
+		if onComplete then
+			onComplete(nil, false, "SSL Library Missing")
+		end
+		return
+	end
+
 	if not itemIds or #itemIds == 0 then
 		if onComplete then
 			onComplete(nil, false, "No item IDs")
@@ -73,8 +89,6 @@ function http.performBulkSearch(itemIds, onComplete)
 		return
 	end
 
-	local mq = require("mq")
-	local ltn12 = require("ltn12")
 	local aggregatedItems = {}
 	local kronoRate = nil
 	local lastUpdated = nil

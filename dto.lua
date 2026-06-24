@@ -3,7 +3,7 @@ local dto = {}
 -- History entry DTO
 function dto.newHistoryEntry(itemName, status, id, data, listedPrice)
 	return {
-		id = id or tostring(os.clock() + math.random()):gsub("%.", ""),
+		id = id or string.format("%d_%d", os.time(), math.random(100000, 999999)),
 		item = itemName,
 		status = status or "Searching...",
 		data = data or nil,

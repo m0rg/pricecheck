@@ -28,8 +28,15 @@ function chat.registerTellEvent(state)
 	end)
 end
 
--- Processes the broadcast command queue with configurable random debounced delay
+local nextBroadcastTime = 0
+
+-- Processes the broadcast command queue with configurable random debounced delay (non-blocking)
 function chat.processBroadcastQueue(state)
+	local currentClock = os.clock()
+	if currentClock < nextBroadcastTime then
+		return false
+	end
+
 	if #state.broadcastQueue > 0 then
 		local commandLine = table.remove(state.broadcastQueue, 1)
 		mq.cmd(commandLine)
@@ -38,8 +45,8 @@ function chat.processBroadcastQueue(state)
 		if min > max then
 			min, max = max, min
 		end
-		local delayTime = math.random(min, max)
-		mq.delay(delayTime)
+		local delayMs = math.random(min, max)
+		nextBroadcastTime = currentClock + (delayMs / 1000)
 		return true
 	end
 	return false

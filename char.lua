@@ -2,11 +2,15 @@ local mq = require("mq")
 
 local char = {}
 
--- Scans character inventory and returns all unique items in worn bag slots (23 to 34)
-function char.getInventoryItems()
+-- Worn bag inventory slot ranges (pack1 through pack12)
+local BAG_SLOT_START = 23
+local BAG_SLOT_END = 34
+
+-- Scans character inventory and returns all unique item types in worn bag slots
+function char.getUniqueInventoryItemTypes()
 	local items = {}
 	local seenIds = {}
-	for i = 23, 34 do
+	for i = BAG_SLOT_START, BAG_SLOT_END do
 		local bag = mq.TLO.Me.Inventory(i)
 		if bag and bag() then
 			if bag.Container() and bag.Container() > 0 then

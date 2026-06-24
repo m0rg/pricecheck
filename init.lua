@@ -20,9 +20,10 @@ local storage = require(myPath .. "storage")
 local char = require(myPath .. "char")
 local dto = require(myPath .. "dto")
 local chat = require(myPath .. "chat")
+local util = require(myPath .. "util")
 
 -- Initialize UI and Chat modules with dependencies (SRP / DI)
-ui.setup(char, dto, chat)
+ui.setup(char, dto, chat, util)
 chat.setup(dto)
 
 local state
@@ -39,51 +40,28 @@ local function saveConfig()
 	if not state or not state.config then
 		return
 	end
-	storage.saveConfig(state.config)
+	local success, err = storage.saveConfig(state.config)
+	if not success then
+		mq.print(string.format("\ar[PriceCheck] Error saving configuration: %s\ax", err or "unknown error"))
+	end
 end
 
 local function saveHistory()
 	if not state or not state.priceHistory then
 		return
 	end
-	storage.saveHistory(state.priceHistory)
+	local success, err = storage.saveHistory(state.priceHistory)
+	if not success then
+		mq.print(string.format("\ar[PriceCheck] Error saving price history: %s\ax", err or "unknown error"))
+	end
 end
 
-local function filterZeroQtyHistory(history)
-	if type(history) ~= "table" then
-		return {}
-	end
-	local i = 1
-	while i <= #history do
-		local entry = history[i]
-		if type(entry) == "table" and type(entry.item) == "string" then
-			if not entry.id or entry.id == "" then
-				entry.id = tostring(os.clock() + math.random() + i):gsub("%.", "")
-			end
-			local count, bankCount = char.getItemCounts(entry.item)
-			if count + bankCount == 0 then
-				table.remove(history, i)
-			else
-				if entry.status == "Searching..." then
-					entry.status = "Failed"
-				end
-				i = i + 1
-			end
-		else
-			table.remove(history, i)
-		end
-		-- Yield every frame to completely prevent startup freezing (KISS delay trap fix)
-		mq.delay(1)
-	end
-	return history
-end
-
-local loadedHistory = filterZeroQtyHistory(storage.loadHistory())
+local loadedHistory = storage.loadHistory()
 local loadedConfig = storage.loadConfig(defaultConfig)
 
 -- Populate bulk history on startup with names only
 local initialBulkHistory = {}
-local initItems = char.getInventoryItems()
+local initItems = char.getUniqueInventoryItemTypes()
 for _, item in ipairs(initItems) do
 	table.insert(initialBulkHistory, dto.newBulkEntry(item.id, item.name))
 end
@@ -106,9 +84,7 @@ state = {
 	isBulkSearching = false,
 }
 
--- Write back the filtered history and config
-saveHistory()
-saveConfig()
+-- Write back the config on boot
 
 -- Register event listener for incoming tells
 chat.registerTellEvent(state)
@@ -121,9 +97,38 @@ mq.imgui.init("PriceCheckWindow", function()
 	ui.render(state)
 end)
 
+local needHistoryFilter = true
+local filterIndex = 1
+
 -- Main script loop (running in the safe script coroutine thread)
 while state.openGUI do
 	mq.doevents()
+
+	-- Non-blocking startup history filtering step (processes one entry per loop iteration)
+	if needHistoryFilter then
+		if filterIndex <= #state.priceHistory then
+			local entry = state.priceHistory[filterIndex]
+			if type(entry) == "table" and type(entry.item) == "string" then
+				if not entry.id or entry.id == "" then
+					entry.id = string.format("%d_%d", os.time(), math.random(100000, 999999))
+				end
+				local count, bankCount = char.getItemCounts(entry.item)
+				if count + bankCount == 0 then
+					table.remove(state.priceHistory, filterIndex)
+				else
+					if entry.status == "Searching..." then
+						entry.status = "Failed"
+					end
+					filterIndex = filterIndex + 1
+				end
+			else
+				table.remove(state.priceHistory, filterIndex)
+			end
+		else
+			needHistoryFilter = false
+			saveHistory()
+		end
+	end
 	if #state.searchQueue > 0 and not state.isSearching then
 		local entry = table.remove(state.searchQueue, 1)
 		state.isSearching = true
