@@ -143,7 +143,7 @@ local function generateItemSegments(state, useLinks)
 			local itemName = (entry.data and entry.data.item) or entry.item
 			local listedPrice = entry.listedPrice or 0
 
-			local countObj = mq.TLO.FindItemCount(string.format('="%s"', itemName))
+			local countObj = mq.TLO.FindItemCount(string.format('=%s', itemName))
 			local count = (countObj and countObj()) or 1
 			if count == 0 then
 				count = 1
@@ -465,10 +465,10 @@ function ui.render(state)
 									valA = valA:lower()
 									valB = valB:lower()
 								elseif spec.ColumnIndex == 2 then
-									local countObjA = mq.TLO.FindItemCount(string.format('="%s"', a.item))
+									local countObjA = mq.TLO.FindItemCount(string.format('=%s', a.item))
 									local countA = (countObjA and countObjA()) or 0
 									valA = countA
-									local countObjB = mq.TLO.FindItemCount(string.format('="%s"', b.item))
+									local countObjB = mq.TLO.FindItemCount(string.format('=%s', b.item))
 									local countB = (countObjB and countObjB()) or 0
 									valB = countB
 								elseif spec.ColumnIndex == 3 then
@@ -527,9 +527,9 @@ function ui.render(state)
 
 						-- Column 2: Qty (Bank)
 						ImGui.TableSetColumnIndex(2)
-						local countObj = mq.TLO.FindItemCount(string.format('="%s"', entry.item))
+						local countObj = mq.TLO.FindItemCount(string.format('=%s', entry.item))
 						local count = (countObj and countObj()) or 0
-						local bankObj = mq.TLO.FindItemBankCount(string.format('="%s"', entry.item))
+						local bankObj = mq.TLO.FindItemBankCount(string.format('=%s', entry.item))
 						local bankCount = (bankObj and bankObj()) or 0
 						ImGui.Text(string.format("%d (%d)", count, bankCount))
 
