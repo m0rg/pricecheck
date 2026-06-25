@@ -1,6 +1,37 @@
 local ImGui = require("ImGui")
 local mq = require("mq")
 
+-- List of plugins required for application functionality (configurable via code)
+local REQUIRED_PLUGINS = {
+	{
+		name = "MQ2LinkDB",
+		alternatives = { "mq2linkdb", "linkdb" },
+		description = "used for item database links",
+	},
+}
+
+-- Reusable helper to check loaded plugins
+local function checkMissingPlugins(plugins)
+	local missing = {}
+	for _, p in ipairs(plugins) do
+		local loaded = false
+		if mq.TLO.Plugin(p.name).IsLoaded() then
+			loaded = true
+		else
+			for _, alt in ipairs(p.alternatives or {}) do
+				if mq.TLO.Plugin(alt).IsLoaded() then
+					loaded = true
+					break
+				end
+			end
+		end
+		if not loaded then
+			table.insert(missing, p)
+		end
+	end
+	return missing
+end
+
 local ui = {}
 
 -- Pure formatting and calculation utilities delegated to util.lua
@@ -183,9 +214,8 @@ function ui.render(state)
 	if shouldDraw then
 		local cursorItemName = char.getCursorItemName()
 
-		-- Check if required plugins are loaded
-		local linkdbLoaded = mq.TLO.Plugin("MQ2LinkDB").IsLoaded() or mq.TLO.Plugin("mq2linkdb").IsLoaded() or mq.TLO.Plugin("linkdb").IsLoaded()
-		local itemdbLoaded = mq.TLO.Plugin("MQ2ItemDB").IsLoaded() or mq.TLO.Plugin("mq2itemdb").IsLoaded() or mq.TLO.Plugin("itemdb").IsLoaded()
+		-- Check required plugins
+		local missingPlugins = checkMissingPlugins(REQUIRED_PLUGINS)
 
 		-- Check if autoloot/lootly are loaded/running
 		local isAutoLootLoaded = mq.TLO.Plugin("MQ2AutoLoot").IsLoaded() or mq.TLO.Plugin("mq2autoloot").IsLoaded() or mq.TLO.Plugin("autoloot").IsLoaded()
@@ -197,26 +227,18 @@ function ui.render(state)
 		local canSetItem = isAutoLootLoaded or isLootlyRunning
 
 		-- Render warning banner if any required plugin is missing
-		if not linkdbLoaded or not itemdbLoaded then
+		if #missingPlugins > 0 then
 			ImGui.PushStyleColor(ImGuiCol.FrameBg, 0.25, 0.1, 0.1, 1.0)
 			ImGui.PushStyleColor(ImGuiCol.Border, 0.8, 0.2, 0.2, 1.0)
 			
-			local numMissing = (not linkdbLoaded and 1 or 0) + (not itemdbLoaded and 1 or 0)
-			local bannerHeight = 25 + numMissing * 22
+			local bannerHeight = 25 + (#missingPlugins * 22)
 			if ImGui.BeginChild("PluginWarning", -1, bannerHeight, true) then
 				ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "Missing Required Plugin(s):")
-				if not linkdbLoaded then
-					ImGui.BulletText("MQ2LinkDB (used for item database links)")
+				for _, p in ipairs(missingPlugins) do
+					ImGui.BulletText(string.format("%s (%s)", p.name, p.description))
 					ImGui.SameLine(320)
-					if ImGui.Button("Load MQ2LinkDB##load_linkdb", 120, 18) then
-						chat.executeCommand("/plugin MQ2LinkDB")
-					end
-				end
-				if not itemdbLoaded then
-					ImGui.BulletText("MQ2ItemDB (used for item information)")
-					ImGui.SameLine(320)
-					if ImGui.Button("Load MQ2ItemDB##load_itemdb", 120, 18) then
-						chat.executeCommand("/plugin MQ2ItemDB")
+					if ImGui.Button(string.format("Load %s##load_%s", p.name, p.name:lower()), 120, 18) then
+						chat.executeCommand(string.format("/plugin %s", p.name))
 					end
 				end
 			end
