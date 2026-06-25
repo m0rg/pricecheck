@@ -183,14 +183,7 @@ function ui.render(state)
 	if shouldDraw then
 		local cursorItemName = char.getCursorItemName()
 
-		-- Check if autoloot/lootly are loaded/running
-		local isAutoLootLoaded = mq.TLO.Plugin("MQ2AutoLoot").IsLoaded() or mq.TLO.Plugin("mq2autoloot").IsLoaded() or mq.TLO.Plugin("autoloot").IsLoaded()
-		local isLootlyRunning = false
-		local lootlyScript = mq.TLO.Lua.Script("lootly")
-		if lootlyScript and lootlyScript() ~= nil then
-			isLootlyRunning = true
-		end
-		local canSetItem = isAutoLootLoaded or isLootlyRunning
+
 
 		-- ----------------------------------------------------
 		-- SECTION 1: Item Drop Slot
@@ -256,8 +249,15 @@ function ui.render(state)
 				ImGui.Separator()
 				ImGui.Text("BULK Price History:")
 				ImGui.SameLine(ImGui.GetWindowWidth() - 95)
-				if ImGui.Button("Add All##Bulk", 80, 0) then
+				local hasBulkPerformed = (state.bulkLastUpdated ~= nil)
+				if not hasBulkPerformed then
+					ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
+				end
+				if ImGui.Button("Add All##Bulk", 80, 0) and hasBulkPerformed then
 					state:addAllBulkItems(dto)
+				end
+				if not hasBulkPerformed then
+					ImGui.PopStyleVar()
 				end
 
 				local flags = bit32.bor(
@@ -268,12 +268,11 @@ function ui.render(state)
 					ImGuiTableFlags.Sortable
 				)
 
-				if ImGui.BeginTable("BulkHistoryTable", 5, flags, 0, 0) then
+				if ImGui.BeginTable("BulkHistoryTable", 4, flags, 0, 0) then
 					ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
 					ImGui.TableSetupColumn("Median Price", ImGuiTableColumnFlags.WidthFixed, 100)
 					ImGui.TableSetupColumn("Vendor Sell", ImGuiTableColumnFlags.WidthFixed, 100)
 					ImGui.TableSetupColumn("Add", bit32.bor(ImGuiTableColumnFlags.WidthFixed, ImGuiTableColumnFlags.NoSort), 45)
-					ImGui.TableSetupColumn("SetItem", bit32.bor(ImGuiTableColumnFlags.WidthFixed, ImGuiTableColumnFlags.NoSort), 65)
 					ImGui.TableHeadersRow()
 
 					local sortSpecs = ImGui.TableGetSortSpecs()
@@ -401,18 +400,6 @@ function ui.render(state)
 						else
 							ImGui.Text("-")
 						end
-
-						-- Column 4: SetItem Button
-						ImGui.TableSetColumnIndex(4)
-						if not canSetItem then
-							ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
-						end
-						if ImGui.Button("SetItem##bulk_set_" .. index, -1, 18) and canSetItem then
-							chat.executeCommand(string.format('/setitem sell "%s"', entry.item))
-						end
-						if not canSetItem then
-							ImGui.PopStyleVar()
-						end
 					end
 					ImGui.EndTable()
 				end
@@ -509,7 +496,7 @@ function ui.render(state)
 					ImGuiTableFlags.Sortable
 				)
 
-				if ImGui.BeginTable("HistoryTable", 11, flags, 0, 0) then
+				if ImGui.BeginTable("HistoryTable", 10, flags, 0, 0) then
 					ImGui.TableSetupColumn("Rem", bit32.bor(ImGuiTableColumnFlags.WidthFixed, ImGuiTableColumnFlags.NoSort), 30)
 					ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
 					ImGui.TableSetupColumn("Qty (Bank)", ImGuiTableColumnFlags.WidthFixed, 70)
@@ -520,7 +507,6 @@ function ui.render(state)
 					ImGui.TableSetupColumn("Avg Buy", ImGuiTableColumnFlags.WidthFixed, 75)
 					ImGui.TableSetupColumn("High WTB", ImGuiTableColumnFlags.WidthFixed, 70)
 					ImGui.TableSetupColumn("Details", bit32.bor(ImGuiTableColumnFlags.WidthFixed, ImGuiTableColumnFlags.NoSort), 55)
-					ImGui.TableSetupColumn("SetItem", bit32.bor(ImGuiTableColumnFlags.WidthFixed, ImGuiTableColumnFlags.NoSort), 65)
 					ImGui.TableHeadersRow()
 
 					local sortSpecs = ImGui.TableGetSortSpecs()
@@ -704,17 +690,7 @@ function ui.render(state)
 							ImGui.Text("-")
 						end
 
-						-- Column 10: SetItem Button
-						ImGui.TableSetColumnIndex(10)
-						if not canSetItem then
-							ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
-						end
-						if ImGui.Button("SetItem##hist_set_" .. entry.id, -1, 18) and canSetItem then
-							chat.executeCommand(string.format('/setitem sell "%s"', entry.item))
-						end
-						if not canSetItem then
-							ImGui.PopStyleVar()
-						end
+
 					end
 
 					state:removePendingItem()
