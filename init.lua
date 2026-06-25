@@ -1,5 +1,55 @@
 local mq = require("mq")
 
+-- Reusable code configuration for required plugins
+local REQUIRED_PLUGINS = {
+	{
+		name = "MQ2LinkDB",
+		alternatives = { "mq2linkdb", "linkdb" },
+	},
+}
+
+-- Reusable check function to ensure required plugins are loaded
+local function ensurePlugins()
+	for _, p in ipairs(REQUIRED_PLUGINS) do
+		local loaded = false
+		if mq.TLO.Plugin(p.name).IsLoaded() then
+			loaded = true
+		else
+			for _, alt in ipairs(p.alternatives or {}) do
+				if mq.TLO.Plugin(alt).IsLoaded() then
+					loaded = true
+					break
+				end
+			end
+		end
+
+		if not loaded then
+			-- Attempt to load it
+			printf("\ar[PriceCheck] Required plugin %s is not loaded. Attempting to load...\ax", p.name)
+			mq.cmd(string.format("/plugin %s", p.name))
+			mq.delay(500) -- brief pause to let it load
+
+			-- Check again
+			loaded = mq.TLO.Plugin(p.name).IsLoaded()
+			if not loaded then
+				for _, alt in ipairs(p.alternatives or {}) do
+					if mq.TLO.Plugin(alt).IsLoaded() then
+						loaded = true
+						break
+					end
+				end
+			end
+		end
+
+		if not loaded then
+			printf("\ar[PriceCheck] Critical Error: Required plugin %s could not be loaded. Exiting script.\ax", p.name)
+			mq.exit()
+		end
+	end
+end
+
+ensurePlugins()
+
 local PackageMan = require("mq/PackageMan")
 local json = PackageMan.Require("lua-cjson", "cjson")
 local curl_ok, curl = pcall(PackageMan.Require, "lua-curl", "lcurl")

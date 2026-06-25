@@ -1,37 +1,6 @@
 local ImGui = require("ImGui")
 local mq = require("mq")
 
--- List of plugins required for application functionality (configurable via code)
-local REQUIRED_PLUGINS = {
-	{
-		name = "MQ2LinkDB",
-		alternatives = { "mq2linkdb", "linkdb" },
-		description = "used for item database links",
-	},
-}
-
--- Reusable helper to check loaded plugins
-local function checkMissingPlugins(plugins)
-	local missing = {}
-	for _, p in ipairs(plugins) do
-		local loaded = false
-		if mq.TLO.Plugin(p.name).IsLoaded() then
-			loaded = true
-		else
-			for _, alt in ipairs(p.alternatives or {}) do
-				if mq.TLO.Plugin(alt).IsLoaded() then
-					loaded = true
-					break
-				end
-			end
-		end
-		if not loaded then
-			table.insert(missing, p)
-		end
-	end
-	return missing
-end
-
 local ui = {}
 
 -- Pure formatting and calculation utilities delegated to util.lua
@@ -214,9 +183,6 @@ function ui.render(state)
 	if shouldDraw then
 		local cursorItemName = char.getCursorItemName()
 
-		-- Check required plugins
-		local missingPlugins = checkMissingPlugins(REQUIRED_PLUGINS)
-
 		-- Check if autoloot/lootly are loaded/running
 		local isAutoLootLoaded = mq.TLO.Plugin("MQ2AutoLoot").IsLoaded() or mq.TLO.Plugin("mq2autoloot").IsLoaded() or mq.TLO.Plugin("autoloot").IsLoaded()
 		local isLootlyRunning = false
@@ -225,27 +191,6 @@ function ui.render(state)
 			isLootlyRunning = true
 		end
 		local canSetItem = isAutoLootLoaded or isLootlyRunning
-
-		-- Render warning banner if any required plugin is missing
-		if #missingPlugins > 0 then
-			ImGui.PushStyleColor(ImGuiCol.FrameBg, 0.25, 0.1, 0.1, 1.0)
-			ImGui.PushStyleColor(ImGuiCol.Border, 0.8, 0.2, 0.2, 1.0)
-			
-			local bannerHeight = 25 + (#missingPlugins * 22)
-			if ImGui.BeginChild("PluginWarning", -1, bannerHeight, true) then
-				ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "Missing Required Plugin(s):")
-				for _, p in ipairs(missingPlugins) do
-					ImGui.BulletText(string.format("%s (%s)", p.name, p.description))
-					ImGui.SameLine(320)
-					if ImGui.Button(string.format("Load %s##load_%s", p.name, p.name:lower()), 120, 18) then
-						chat.executeCommand(string.format("/plugin %s", p.name))
-					end
-				end
-			end
-			ImGui.EndChild()
-			ImGui.PopStyleColor(2)
-			ImGui.Spacing()
-		end
 
 		-- ----------------------------------------------------
 		-- SECTION 1: Item Drop Slot
