@@ -118,6 +118,7 @@ local filterIndex = 1
 -- Main script loop (running in the safe script coroutine thread)
 while state.openGUI do
 	mq.doevents()
+	http.tick()
 
 	-- Handle toggled interval broadcasting
 	if state.isBroadcastingToggled then
@@ -169,9 +170,7 @@ while state.openGUI do
 	if #state.searchQueue > 0 and not state.isSearching then
 		local entry = table.remove(state.searchQueue, 1)
 		state.isSearching = true
-		local callbackCalled = false
 		http.performSearch(entry.item, function(success, data, statusText)
-			callbackCalled = true
 			state.isSearching = false
 			entry.status = statusText
 			if success and data then
@@ -190,21 +189,12 @@ while state.openGUI do
 
 			saveHistory()
 		end)
-
-		if not callbackCalled then
-			state.isSearching = false
-			entry.status = "Error"
-
-			saveHistory()
-		end
 		mq.delay(100)
 	elseif #state.bulkQueue > 0 then
 		local ids = state.bulkQueue
 		state.bulkQueue = {}
 		state.isBulkSearching = true
-		local callbackCalled = false
 		http.performBulkSearch(ids, function(result, success, errMsg)
-			callbackCalled = true
 			if success and result then
 				state.bulkLastUpdated = result.lastUpdated
 				state.bulkKronoRate = result.kronoRate
@@ -258,18 +248,6 @@ while state.openGUI do
 			end
 			state.isBulkSearching = false
 		end)
-
-		if not callbackCalled then
-			state.isBulkSearching = false
-			for _, itemId in ipairs(ids) do
-				for _, existing in ipairs(state.bulkPriceHistory) do
-					if existing.itemId == itemId and existing.status == "Searching..." then
-						existing.status = "Error"
-					end
-				end
-
-			end
-		end
 		mq.delay(100)
 	elseif chat.processBroadcastQueue(state) then
 		-- Handled by chat module
