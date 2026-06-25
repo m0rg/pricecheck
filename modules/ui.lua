@@ -116,6 +116,39 @@ local function queueSearch(state, itemName)
 	state:queueSearch(itemName, dto)
 end
 
+-- Helper function to render recent WTS/WTB transactions in an ImGui table (shared between tooltip and cursor window)
+local function drawTransactionTable(tableNameSuffix, title, logArray)
+	ImGui.TextColored(0.4, 1.0, 0.4, 1.0, title)
+	if not logArray or #logArray == 0 then
+		ImGui.TextDisabled("   No recent transactions.")
+		return
+	end
+
+	local tFlags = bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.RowBg)
+	if ImGui.BeginTable(title .. tableNameSuffix, 4, tFlags, 0, 0) then
+		ImGui.TableSetupColumn("Trader", ImGuiTableColumnFlags.WidthStretch)
+		ImGui.TableSetupColumn("Plat", ImGuiTableColumnFlags.WidthFixed, 55)
+		ImGui.TableSetupColumn("Krono", ImGuiTableColumnFlags.WidthFixed, 45)
+		ImGui.TableSetupColumn("Age", ImGuiTableColumnFlags.WidthFixed, 75)
+		ImGui.TableHeadersRow()
+
+		local limit = math.min(#logArray, 5)
+		for i = 1, limit do
+			local log = logArray[i]
+			ImGui.TableNextRow()
+			ImGui.TableSetColumnIndex(0)
+			ImGui.Text(log.auctioneer or "Unknown")
+			ImGui.TableSetColumnIndex(1)
+			ImGui.Text(tostring(math.floor(log.platPrice or 0)))
+			ImGui.TableSetColumnIndex(2)
+			ImGui.Text(tostring(log.kronoPrice or 0))
+			ImGui.TableSetColumnIndex(3)
+			ImGui.TextColored(0.7, 0.7, 0.7, 1.0, util.getRelativeTimeString(log.datetime))
+		end
+		ImGui.EndTable()
+	end
+end
+
 -- Helper function to render detailed log data inside an ImGui tooltip on hover
 local function renderDetailsTooltip(entry)
 	if not entry or not entry.data then return end
@@ -128,41 +161,9 @@ local function renderDetailsTooltip(entry)
 	ImGui.Text(string.format("Buyers Avg: %.1f pp (Samples: %d)", data.buyAverage or 0, data.buySampleSize or 0))
 	ImGui.Spacing()
 
-	local function drawCompactTable(title, logArray)
-		ImGui.TextColored(0.4, 1.0, 0.4, 1.0, title)
-		if not logArray or #logArray == 0 then
-			ImGui.TextDisabled("   No recent transactions recorded.")
-			return
-		end
-
-		local tFlags = bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.RowBg)
-		if ImGui.BeginTable(title .. "TooltipTable", 4, tFlags, 0, 0) then
-			ImGui.TableSetupColumn("Trader", ImGuiTableColumnFlags.WidthStretch)
-			ImGui.TableSetupColumn("Plat", ImGuiTableColumnFlags.WidthFixed, 55)
-			ImGui.TableSetupColumn("Krono", ImGuiTableColumnFlags.WidthFixed, 45)
-			ImGui.TableSetupColumn("Age", ImGuiTableColumnFlags.WidthFixed, 75)
-			ImGui.TableHeadersRow()
-
-			local limit = math.min(#logArray, 5)
-			for i = 1, limit do
-				local log = logArray[i]
-				ImGui.TableNextRow()
-				ImGui.TableSetColumnIndex(0)
-				ImGui.Text(log.auctioneer or "Unknown")
-				ImGui.TableSetColumnIndex(1)
-				ImGui.Text(tostring(math.floor(log.platPrice or 0)))
-				ImGui.TableSetColumnIndex(2)
-				ImGui.Text(tostring(log.kronoPrice or 0))
-				ImGui.TableSetColumnIndex(3)
-				ImGui.TextColored(0.7, 0.7, 0.7, 1.0, util.getRelativeTimeString(log.datetime))
-			end
-			ImGui.EndTable()
-		end
-	end
-
-	drawCompactTable("Recent Sell Offers (WTS)", data.recentSellSales)
+	drawTransactionTable("TooltipTable", "Recent Sell Offers (WTS)", data.recentSellSales)
 	ImGui.Spacing()
-	drawCompactTable("Recent Buy Offers (WTB)", data.recentBuySales)
+	drawTransactionTable("TooltipTable", "Recent Buy Offers (WTB)", data.recentBuySales)
 	ImGui.EndTooltip()
 end
 
@@ -902,6 +903,16 @@ function renderCursorQueryWindow(state)
 
 	if shouldDraw then
 		local result = state.cursorQueryResult
+
+		-- Check if already listed in Trade list (cached at top to avoid duplication)
+		local isAlreadyListed = false
+		for _, hEntry in ipairs(state.priceHistory) do
+			if hEntry.item:lower() == result.item:lower() then
+				isAlreadyListed = true
+				break
+			end
+		end
+
 		ImGui.TextColored(0.4, 0.8, 1.0, 1.0, "Item: " .. result.item)
 		ImGui.Separator()
 
@@ -913,53 +924,12 @@ function renderCursorQueryWindow(state)
 			ImGui.Text(string.format("Buyers Avg: %.1f pp (Samples: %d)", data.buyAverage or 0, data.buySampleSize or 0))
 			ImGui.Spacing()
 
-			local function drawDetailsTable(title, logArray)
-				ImGui.TextColored(0.4, 1.0, 0.4, 1.0, title)
-				if not logArray or #logArray == 0 then
-					ImGui.TextDisabled("   No recent transactions.")
-					return
-				end
-
-				local tFlags = bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.RowBg)
-				if ImGui.BeginTable(title .. "CursorTable", 4, tFlags, 0, 0) then
-					ImGui.TableSetupColumn("Trader", ImGuiTableColumnFlags.WidthStretch)
-					ImGui.TableSetupColumn("Plat", ImGuiTableColumnFlags.WidthFixed, 55)
-					ImGui.TableSetupColumn("Krono", ImGuiTableColumnFlags.WidthFixed, 45)
-					ImGui.TableSetupColumn("Age", ImGuiTableColumnFlags.WidthFixed, 70)
-					ImGui.TableHeadersRow()
-
-					local limit = math.min(#logArray, 5)
-					for i = 1, limit do
-						local log = logArray[i]
-						ImGui.TableNextRow()
-						ImGui.TableSetColumnIndex(0)
-						ImGui.Text(log.auctioneer or "Unknown")
-						ImGui.TableSetColumnIndex(1)
-						ImGui.Text(tostring(math.floor(log.platPrice or 0)))
-						ImGui.TableSetColumnIndex(2)
-						ImGui.Text(tostring(log.kronoPrice or 0))
-						ImGui.TableSetColumnIndex(3)
-						ImGui.TextColored(0.7, 0.7, 0.7, 1.0, util.getRelativeTimeString(log.datetime))
-					end
-					ImGui.EndTable()
-				end
-			end
-
-			drawDetailsTable("Recent Sell Offers (WTS)", data.recentSellSales)
+			drawTransactionTable("CursorTable", "Recent Sell Offers (WTS)", data.recentSellSales)
 			ImGui.Spacing()
-			drawDetailsTable("Recent Buy Offers (WTB)", data.recentBuySales)
+			drawTransactionTable("CursorTable", "Recent Buy Offers (WTB)", data.recentBuySales)
 			ImGui.Spacing()
 			ImGui.Separator()
 			ImGui.Spacing()
-
-			-- Check if already listed in Trade list
-			local isAlreadyListed = false
-			for _, hEntry in ipairs(state.priceHistory) do
-				if hEntry.item:lower() == result.item:lower() then
-					isAlreadyListed = true
-					break
-				end
-			end
 
 			if isAlreadyListed then
 				ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
@@ -974,15 +944,6 @@ function renderCursorQueryWindow(state)
 		else
 			ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "Status: " .. tostring(result.status or "Error"))
 			ImGui.Spacing()
-
-			-- Allow adding even if search failed (with default price)
-			local isAlreadyListed = false
-			for _, hEntry in ipairs(state.priceHistory) do
-				if hEntry.item:lower() == result.item:lower() then
-					isAlreadyListed = true
-					break
-				end
-			end
 
 			if isAlreadyListed then
 				ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)

@@ -93,6 +93,7 @@ function http.performSearch(itemName, onComplete)
 	local ok, err = pcall(function()
 		c = curl.easy{
 			url = url,
+			timeout = 15,
 			writefunction = function(data)
 				table.insert(response_body, data)
 			end
@@ -204,6 +205,7 @@ function http.performBulkSearch(itemIds, onComplete)
 					url = "https://tlp-auctions.com/api/prices/bulk",
 					post = true,
 					postfields = body,
+					timeout = 15,
 					httpheader = {
 						"Content-Type: application/json",
 						"Content-Length: " .. tostring(#body),

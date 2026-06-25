@@ -115,7 +115,9 @@ while state.openGUI do
 		local itemName = state.cursorQueryResult.item
 		state:clearCursorQueryPending()
 		http.performSearch(itemName, function(success, data, statusText)
-			state:setCursorQueryResult({ item = itemName, status = statusText, data = data })
+			if state.cursorQueryResult and state.cursorQueryResult.item == itemName then
+				state:setCursorQueryResult({ item = itemName, status = statusText, data = data })
+			end
 		end)
 	end
 
