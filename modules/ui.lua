@@ -594,11 +594,14 @@ function ui.render(state)
 						ImGui.TextColored(0.4, 0.8, 1.0, 1.0, displayName)
 						if ImGui.IsItemHovered() then
 							ImGui.BeginTooltip()
-							ImGui.Text("Click to view standalone price details")
+							ImGui.Text("Left-click to view standalone price details\nRight-click to pick up item to cursor")
 							ImGui.EndTooltip()
 						end
-						if ImGui.IsItemClicked() then
+						if ImGui.IsItemClicked(0) then
 							state:requestCursorQuery(entry.item)
+						end
+						if ImGui.IsItemClicked(1) then
+							chat.executeCommand(string.format('/nomodkey /itemnotify "%s" leftmouseup', entry.item))
 						end
 
 						-- Column 2: Qty (Bank)
