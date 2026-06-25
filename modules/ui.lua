@@ -250,11 +250,39 @@ function ui.render(state)
 				ImGui.Text("BULK Price History:")
 				ImGui.SameLine(ImGui.GetWindowWidth() - 95)
 				local hasBulkPerformed = (state.bulkLastUpdated ~= nil)
+				local itemsToSearchCount = 0
+				if hasBulkPerformed then
+					for _, entry in ipairs(state.bulkPriceHistory) do
+						local alreadyListed = false
+						for _, hEntry in ipairs(state.priceHistory) do
+							if hEntry.item:lower() == entry.item:lower() then
+								alreadyListed = true
+								break
+							end
+						end
+						if not alreadyListed then
+							if entry.status == "Success" and entry.hasData and entry.medianPlatPrice then
+								itemsToSearchCount = itemsToSearchCount + 1
+							end
+						end
+					end
+				end
+
 				if not hasBulkPerformed then
 					ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
 				end
 				if ImGui.Button("Add All##Bulk", 80, 0) and hasBulkPerformed then
 					state:addAllBulkItems(dto)
+				end
+				if ImGui.IsItemHovered() then
+					ImGui.BeginTooltip()
+					if hasBulkPerformed then
+						local estTime = itemsToSearchCount -- 1 second per item
+						ImGui.Text(string.format("Add all remaining items to the trade list.\nEstimated query time: %d seconds (%d items to search)", estTime, itemsToSearchCount))
+					else
+						ImGui.Text("Please perform a bulk price check first.")
+					end
+					ImGui.EndTooltip()
 				end
 				if not hasBulkPerformed then
 					ImGui.PopStyleVar()

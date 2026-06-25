@@ -152,6 +152,7 @@ mq.imgui.init("PriceCheckWindow", function()
 	ui.render(state)
 end)
 
+local lastSingleQueryTime = 0
 local needHistoryFilter = true
 local filterIndex = 1
 
@@ -162,13 +163,17 @@ while state.openGUI do
 
 	-- Handle cursor query requests (non-blocking, independent of the trade searchQueue)
 	if state.cursorQueryPending then
-		local itemName = state.cursorQueryResult.item
-		state:clearCursorQueryPending()
-		http.performSearch(itemName, function(success, data, statusText)
-			if state.cursorQueryResult and state.cursorQueryResult.item == itemName then
-				state:setCursorQueryResult({ item = itemName, status = statusText, data = data })
-			end
-		end)
+		local nowMs = mq.gettime()
+		if nowMs - lastSingleQueryTime >= 1000 then
+			local itemName = state.cursorQueryResult.item
+			state:clearCursorQueryPending()
+			lastSingleQueryTime = nowMs
+			http.performSearch(itemName, function(success, data, statusText)
+				if state.cursorQueryResult and state.cursorQueryResult.item == itemName then
+					state:setCursorQueryResult({ item = itemName, status = statusText, data = data })
+				end
+			end)
+		end
 	end
 
 	-- Handle toggled interval broadcasting
@@ -201,9 +206,11 @@ while state.openGUI do
 			saveHistory()
 		end
 	end
-	if #state.searchQueue > 0 and not state.isSearching then
+	local nowMs = mq.gettime()
+	if #state.searchQueue > 0 and not state.isSearching and (nowMs - lastSingleQueryTime >= 1000) then
 		local entry = state:popSearchQueue()
 		state:setSearching(true)
+		lastSingleQueryTime = nowMs
 		http.performSearch(entry.item, function(success, data, statusText)
 			state:setSearching(false)
 			state:updateSearchFinished(entry, success, data, statusText)
