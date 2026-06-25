@@ -1,13 +1,15 @@
 local mq = require("mq")
 local ltn12 = require("ltn12")
 
-local ssl_ok, https = pcall(require, "ssl.https")
-
 local http = {}
 local json
+local https
+local ssl_ok = false
 
-function http.setup(jsonModule)
+function http.setup(jsonModule, httpsModule)
 	json = jsonModule
+	https = httpsModule
+	ssl_ok = (https ~= nil)
 end
 
 -- Helper function to properly percent-encode URL parameters
