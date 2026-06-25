@@ -1,15 +1,14 @@
 local mq = require("mq")
-local ltn12 = require("ltn12")
 
 local http = {}
 local json
-local https
-local ssl_ok = false
+local curl
+local curl_ok = false
 
-function http.setup(jsonModule, httpsModule)
+function http.setup(jsonModule, curlModule)
 	json = jsonModule
-	https = httpsModule
-	ssl_ok = (https ~= nil)
+	curl = curlModule
+	curl_ok = (curl ~= nil)
 end
 
 -- Helper function to properly percent-encode URL parameters
@@ -24,9 +23,9 @@ function http.urlEncode(str)
 end
 
 function http.performSearch(itemName, onComplete)
-	if not ssl_ok or not https then
+	if not curl_ok or not curl then
 		if onComplete then
-			onComplete(false, nil, "SSL Library Missing")
+			onComplete(false, nil, "curl Library Missing")
 		end
 		return
 	end
@@ -46,27 +45,39 @@ function http.performSearch(itemName, onComplete)
 		encodedName
 	)
 
-	local ok, res, code = pcall(https.request, url)
+	local response_body = {}
+	local ok, result = pcall(function()
+		local c = curl.easy{
+			url = url,
+			writefunction = function(data)
+				table.insert(response_body, data)
+			end
+		}
+		c:perform()
+		local code = c:getinfo(curl.INFO_RESPONSE_CODE)
+		c:close()
+		return { body = table.concat(response_body), code = code }
+	end)
 
-	if not ok or code ~= 200 or not res then
-		local errCode = code and tostring(code) or "Request Failed"
+	if not ok or not result or result.code ~= 200 then
+		local errCode = (result and result.code) and tostring(result.code) or "Request Failed"
 		if onComplete then
 			onComplete(false, nil, "Error (" .. errCode .. ")")
 		end
 		return
 	end
 
-	local status, result = pcall(json.decode, res)
-	if not status or type(result) ~= "table" then
+	local status, decoded = pcall(json.decode, result.body)
+	if not status or type(decoded) ~= "table" then
 		if onComplete then
 			onComplete(false, nil, "JSON Error")
 		end
 		return
 	end
 
-	local cleanData = result
-	if result[1] and type(result[1]) == "table" then
-		cleanData = result[1]
+	local cleanData = decoded
+	if decoded[1] and type(decoded[1]) == "table" then
+		cleanData = decoded[1]
 	end
 
 	if cleanData and (cleanData.sellAverage or cleanData.buyAverage) then
@@ -82,9 +93,9 @@ end
 
 -- Function to execute bulk HTTP request (run only in main script loop)
 function http.performBulkSearch(itemIds, onComplete)
-	if not ssl_ok or not https then
+	if not curl_ok or not curl then
 		if onComplete then
-			onComplete(nil, false, "SSL Library Missing")
+			onComplete(nil, false, "curl Library Missing")
 		end
 		return
 	end
@@ -121,33 +132,40 @@ function http.performBulkSearch(itemIds, onComplete)
 		end
 
 		local response_body = {}
-		local ok_req, res, code, headers, status = pcall(https.request, {
-			url = "https://tlp-auctions.com/api/prices/bulk",
-			method = "POST",
-			headers = {
-				["Content-Type"] = "application/json",
-				["Content-Length"] = tostring(#body),
-			},
-			source = ltn12.source.string(body),
-			sink = ltn12.sink.table(response_body),
-		})
+		local ok_req, result = pcall(function()
+			local c = curl.easy{
+				url = "https://tlp-auctions.com/api/prices/bulk",
+				post = true,
+				postfields = body,
+				httpheader = {
+					"Content-Type: application/json",
+					"Content-Length: " .. tostring(#body),
+				},
+				writefunction = function(data)
+					table.insert(response_body, data)
+				end
+			}
+			c:perform()
+			local code = c:getinfo(curl.INFO_RESPONSE_CODE)
+			c:close()
+			return { body = table.concat(response_body), code = code }
+		end)
 
-		if not ok_req or code ~= 200 or not response_body then
-			lastError = code and tostring(code) or "Request Failed"
+		if not ok_req or not result or result.code ~= 200 then
+			lastError = (result and result.code) and tostring(result.code) or "Request Failed"
 			break
 		end
 
-		local resp_str = table.concat(response_body)
-		local ok_dec, result = pcall(json.decode, resp_str)
-		if not ok_dec or type(result) ~= "table" then
+		local ok_dec, decoded = pcall(json.decode, result.body)
+		if not ok_dec or type(decoded) ~= "table" then
 			lastError = "JSON decoding error"
 			break
 		end
 
-		kronoRate = result.kronoRate or kronoRate
-		lastUpdated = result.lastUpdated or lastUpdated
-		if result.items then
-			for _, item in ipairs(result.items) do
+		kronoRate = decoded.kronoRate or kronoRate
+		lastUpdated = decoded.lastUpdated or lastUpdated
+		if decoded.items then
+			for _, item in ipairs(decoded.items) do
 				table.insert(aggregatedItems, item)
 			end
 		end
