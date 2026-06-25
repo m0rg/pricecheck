@@ -1,8 +1,13 @@
+local logger = require("pricecheck.modules.log")
+
 local dto = {}
 
--- History entry DTO with type assertions
+-- History entry DTO with graceful fallbacks and logging
 function dto.newHistoryEntry(itemName, status, id, data, listedPrice)
-	assert(type(itemName) == "string", "itemName must be a string")
+	if type(itemName) ~= "string" then
+		logger.log("Warning: newHistoryEntry received itemName of type %s, expected string. Coercing to string.", type(itemName))
+		itemName = tostring(itemName or "")
+	end
 	return {
 		id = id or string.format("%d_%d", os.time(), math.random(100000, 999999)),
 		item = itemName,
@@ -12,10 +17,16 @@ function dto.newHistoryEntry(itemName, status, id, data, listedPrice)
 	}
 end
 
--- Bulk inventory check item entry DTO with type assertions
+-- Bulk inventory check item entry DTO with graceful fallbacks and logging
 function dto.newBulkEntry(itemId, itemName, status, medianPlatPrice, hasData, sampleSize)
-	assert(type(itemId) == "number", "itemId must be a number")
-	assert(type(itemName) == "string", "itemName must be a string")
+	if type(itemId) ~= "number" then
+		logger.log("Warning: newBulkEntry received itemId of type %s, expected number. Coercing to number.", type(itemId))
+		itemId = tonumber(itemId) or 0
+	end
+	if type(itemName) ~= "string" then
+		logger.log("Warning: newBulkEntry received itemName of type %s, expected string. Coercing to string.", type(itemName))
+		itemName = tostring(itemName or "")
+	end
 	return {
 		itemId = itemId,
 		item = itemName,
@@ -26,10 +37,16 @@ function dto.newBulkEntry(itemId, itemName, status, medianPlatPrice, hasData, sa
 	}
 end
 
--- Received tell entry DTO with type assertions
+-- Received tell entry DTO with graceful fallbacks and logging
 function dto.newTellEntry(sender, message, timestamp)
-	assert(type(sender) == "string", "sender must be a string")
-	assert(type(message) == "string", "message must be a string")
+	if type(sender) ~= "string" then
+		logger.log("Warning: newTellEntry received sender of type %s, expected string. Coercing to string.", type(sender))
+		sender = tostring(sender or "Unknown")
+	end
+	if type(message) ~= "string" then
+		logger.log("Warning: newTellEntry received message of type %s, expected string. Coercing to string.", type(message))
+		message = tostring(message or "")
+	end
 	return {
 		sender = sender,
 		message = message,

@@ -1,8 +1,10 @@
 local util = {}
 
--- Calculate timezone bias once at load time (DST-safe for current execution session)
-local now = os.time()
-local timezoneBias = os.difftime(now, os.time(os.date("!*t", now)))
+-- Helper to calculate timezone offset bias dynamically (DST-resilient for long-running scripts)
+local function getTimezoneBias()
+	local now = os.time()
+	return os.difftime(now, os.time(os.date("!*t", now)))
+end
 
 -- Parse ISO 8601 UTC date string into a local Unix timestamp
 function util.parseISOTimestamp(str)
@@ -21,7 +23,7 @@ function util.parseISOTimestamp(str)
 		return nil
 	end
 
-	return utcTime + timezoneBias
+	return utcTime + getTimezoneBias()
 end
 
 -- Format numbers with thousands separators
