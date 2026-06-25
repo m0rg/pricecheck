@@ -470,4 +470,43 @@ function stateManager:queueSearch(itemName, dto)
 	end
 end
 
+function stateManager:addHistoryEntryWithDefaultPrice(itemName, defaultPrice, dto)
+	if not itemName or itemName == "" then
+		return
+	end
+
+	-- Check if the item already exists in history (case-insensitive lookup)
+	local existingEntry = nil
+	local existingIndex = nil
+	for i, entry in ipairs(self._data.priceHistory) do
+		if entry.item:lower() == itemName:lower() then
+			existingEntry = entry
+			existingIndex = i
+			break
+		end
+	end
+
+	if existingEntry then
+		-- Move existing entry to the top of the history list for visibility
+		if existingIndex > 1 then
+			table.remove(self._data.priceHistory, existingIndex)
+			table.insert(self._data.priceHistory, 1, existingEntry)
+			self:requestSave()
+		end
+
+		if existingEntry.status ~= "Success" then
+			existingEntry.status = "Success"
+			existingEntry.listedPrice = defaultPrice
+			self:requestSave()
+			logger.log("\ar[PriceCheck State]\ax updated existing entry %q to success with default price %d", itemName, defaultPrice)
+		end
+	else
+		-- Create a new history entry with status "Success" and the default price
+		local entry = dto.newHistoryEntry(itemName, "Success", nil, nil, defaultPrice)
+		table.insert(self._data.priceHistory, 1, entry)
+		self:requestSave()
+		logger.log("\ar[PriceCheck State]\ax added new entry %q with default price %d", itemName, defaultPrice)
+	end
+end
+
 return stateManager

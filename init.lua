@@ -35,6 +35,7 @@ local defaultConfig = {
 	replyMessage = "Sure, near Parcel",
 	broadcastInterval = 120,
 	debug = true,
+	defaultPlatPrice = 1000,
 }
 
 local function saveConfig()

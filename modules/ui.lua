@@ -358,26 +358,45 @@ function ui.render(state)
 							if ImGui.Button("SetItem##" .. index, -1, 18) then
 								chat.executeCommand(string.format('/setitem sell "%s"', entry.item))
 							end
-						elseif entry.status == "Success" and entry.hasData and entry.medianPlatPrice then
-							local isSearchingThis = false
+						else
+							local isAlreadyListed = false
 							for _, hEntry in ipairs(state.priceHistory) do
 								if hEntry.item:lower() == entry.item:lower() then
-									if hEntry.status == "Searching..." then
-										isSearchingThis = true
-									end
+									isAlreadyListed = true
 									break
 								end
 							end
 
-							if isSearchingThis then
-								ImGui.TextColored(1.0, 0.8, 0.2, 1.0, "...")
-							else
-								if ImGui.Button("+##bulk_add_" .. index, -1, 18) then
+							if entry.status == "Success" and entry.hasData and entry.medianPlatPrice then
+								if isAlreadyListed then
+									ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
+								end
+								if ImGui.Button("+##bulk_add_" .. index, -1, 18) and not isAlreadyListed then
 									queueSearch(state, entry.item)
 								end
+								if isAlreadyListed then
+									ImGui.PopStyleVar()
+								end
+							elseif entry.status == "Success" and (not entry.hasData or not entry.medianPlatPrice) then
+								ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.15, 0.15, 1.0)
+								ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.8, 0.25, 0.25, 1.0)
+								ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.5, 0.1, 0.1, 1.0)
+
+								if isAlreadyListed then
+									ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
+								end
+								if ImGui.Button("+##bulk_add_no_price_" .. index, -1, 18) and not isAlreadyListed then
+									local defaultPrice = (state.config and state.config.defaultPlatPrice) or 1000
+									state:addHistoryEntryWithDefaultPrice(entry.item, defaultPrice, dto)
+								end
+								if isAlreadyListed then
+									ImGui.PopStyleVar()
+								end
+
+								ImGui.PopStyleColor(3)
+							else
+								ImGui.Text("-")
 							end
-						else
-							ImGui.Text("-")
 						end
 					end
 					ImGui.EndTable()
@@ -591,7 +610,7 @@ function ui.render(state)
 								ImGui.TextColored(1.0, 0.3, 0.3, 1.0, entry.status)
 							end
 						else
-							local sellPrice = entry.data.sellAverage or 0
+							local sellPrice = (entry.data and entry.data.sellAverage) or 0
 							ImGui.TextColored(0.4, 1.0, 0.4, 1.0, string.format("%.1f pp", sellPrice))
 						end
 
@@ -633,7 +652,7 @@ function ui.render(state)
 						-- Column 7: Avg Buy
 						ImGui.TableSetColumnIndex(7)
 						if entry.status == "Success" then
-							local buyPrice = entry.data.buyAverage or 0
+							local buyPrice = (entry.data and entry.data.buyAverage) or 0
 							ImGui.TextColored(1.0, 0.7, 0.4, 1.0, string.format("%.1f pp", buyPrice))
 						else
 							ImGui.Text("-")
@@ -827,6 +846,18 @@ function ui.render(state)
 				local valBroadcastInterval, changedBroadcastInterval = ImGui.SliderInt("##broadcast_interval", state.config.broadcastInterval or 120, 120, 1200, "%d seconds")
 				if changedBroadcastInterval then
 					state:updateConfigKey("broadcastInterval", valBroadcastInterval)
+				end
+				ImGui.PopItemWidth()
+
+				ImGui.Spacing()
+				ImGui.Text("Default Item Price (pp) for No-Price Adds:")
+				ImGui.PushItemWidth(120)
+				local valDefaultPrice, changedDefaultPrice = ImGui.InputInt("##default_item_price", state.config.defaultPlatPrice or 1000, 50, 500)
+				if valDefaultPrice < 0 then
+					valDefaultPrice = 0
+				end
+				if changedDefaultPrice then
+					state:updateConfigKey("defaultPlatPrice", valDefaultPrice)
 				end
 				ImGui.PopItemWidth()
 
