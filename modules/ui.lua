@@ -1,4 +1,5 @@
 local ImGui = require("ImGui")
+local mq = require("mq")
 
 local ui = {}
 
@@ -182,6 +183,48 @@ function ui.render(state)
 	if shouldDraw then
 		local cursorItemName = char.getCursorItemName()
 
+		-- Check if required plugins are loaded
+		local linkdbLoaded = mq.TLO.Plugin("mq2linkdb").IsLoaded() or mq.TLO.Plugin("linkdb").IsLoaded()
+		local itemdbLoaded = mq.TLO.Plugin("mq2itemdb").IsLoaded() or mq.TLO.Plugin("itemdb").IsLoaded()
+
+		-- Check if autoloot/lootly are loaded/running
+		local isAutoLootLoaded = mq.TLO.Plugin("mq2autoloot").IsLoaded() or mq.TLO.Plugin("autoloot").IsLoaded()
+		local isLootlyRunning = false
+		local lootlyScript = mq.TLO.Lua.Script("lootly")
+		if lootlyScript and lootlyScript() ~= nil then
+			isLootlyRunning = true
+		end
+		local canSetItem = isAutoLootLoaded or isLootlyRunning
+
+		-- Render warning banner if any required plugin is missing
+		if not linkdbLoaded or not itemdbLoaded then
+			ImGui.PushStyleColor(ImGuiCol.FrameBg, 0.25, 0.1, 0.1, 1.0)
+			ImGui.PushStyleColor(ImGuiCol.Border, 0.8, 0.2, 0.2, 1.0)
+			
+			local numMissing = (not linkdbLoaded and 1 or 0) + (not itemdbLoaded and 1 or 0)
+			local bannerHeight = 25 + numMissing * 22
+			if ImGui.BeginChild("PluginWarning", -1, bannerHeight, true) then
+				ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "Missing Required Plugin(s):")
+				if not linkdbLoaded then
+					ImGui.BulletText("mq2linkdb (used for item database links)")
+					ImGui.SameLine(320)
+					if ImGui.Button("Load mq2linkdb##load_linkdb", 120, 18) then
+						chat.executeCommand("/plugin mq2linkdb")
+					end
+				end
+				if not itemdbLoaded then
+					ImGui.BulletText("mq2itemdb (used for item information)")
+					ImGui.SameLine(320)
+					if ImGui.Button("Load mq2itemdb##load_itemdb", 120, 18) then
+						chat.executeCommand("/plugin mq2itemdb")
+					end
+				end
+			end
+			ImGui.EndChild()
+			ImGui.PopStyleColor(2)
+			ImGui.Spacing()
+		end
+
 		-- ----------------------------------------------------
 		-- SECTION 1: Item Drop Slot
 		-- ----------------------------------------------------
@@ -245,9 +288,9 @@ function ui.render(state)
 
 				ImGui.Separator()
 				ImGui.Text("BULK Price History:")
-				ImGui.SameLine(ImGui.GetWindowWidth() - 90)
-				if ImGui.Button("Clear##Bulk", 75, 0) then
-					state:clearBulkHistory()
+				ImGui.SameLine(ImGui.GetWindowWidth() - 95)
+				if ImGui.Button("Add All##Bulk", 80, 0) then
+					state:addAllBulkItems(dto)
 				end
 
 				local flags = bit32.bor(
@@ -258,11 +301,12 @@ function ui.render(state)
 					ImGuiTableFlags.Sortable
 				)
 
-				if ImGui.BeginTable("BulkHistoryTable", 4, flags, 0, 0) then
+				if ImGui.BeginTable("BulkHistoryTable", 5, flags, 0, 0) then
 					ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
 					ImGui.TableSetupColumn("Median Price", ImGuiTableColumnFlags.WidthFixed, 100)
 					ImGui.TableSetupColumn("Vendor Sell", ImGuiTableColumnFlags.WidthFixed, 100)
 					ImGui.TableSetupColumn("Add", bit32.bor(ImGuiTableColumnFlags.WidthFixed, ImGuiTableColumnFlags.NoSort), 45)
+					ImGui.TableSetupColumn("SetItem", bit32.bor(ImGuiTableColumnFlags.WidthFixed, ImGuiTableColumnFlags.NoSort), 65)
 					ImGui.TableHeadersRow()
 
 					local sortSpecs = ImGui.TableGetSortSpecs()
@@ -350,51 +394,57 @@ function ui.render(state)
 							ImGui.Text("-")
 						end
 
-						-- Column 3: Add Button / Lootly Button
+						-- Column 3: Add Button
 						ImGui.TableSetColumnIndex(3)
-						if isVendorBetter then
-							if ImGui.Button("SetItem##" .. index, -1, 18) then
-								chat.executeCommand(string.format('/setitem sell "%s"', entry.item))
+						local isAlreadyListed = false
+						for _, hEntry in ipairs(state.priceHistory) do
+							if hEntry.item:lower() == entry.item:lower() then
+								isAlreadyListed = true
+								break
 							end
+						end
+
+						if entry.status == "Success" and entry.hasData and entry.medianPlatPrice then
+							if isAlreadyListed then
+								ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
+							end
+							if ImGui.Button("+##bulk_add_" .. index, -1, 18) and not isAlreadyListed then
+								queueSearch(state, entry.item)
+							end
+							if isAlreadyListed then
+								ImGui.PopStyleVar()
+							end
+						elseif entry.status == "Success" and (not entry.hasData or not entry.medianPlatPrice) then
+							ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.15, 0.15, 1.0)
+							ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.8, 0.25, 0.25, 1.0)
+							ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.5, 0.1, 0.1, 1.0)
+
+							if isAlreadyListed then
+								ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
+							end
+							if ImGui.Button("+##bulk_add_no_price_" .. index, -1, 18) and not isAlreadyListed then
+								local defaultPrice = (state.config and state.config.defaultPlatPrice) or 1000
+								state:addHistoryEntryWithDefaultPrice(entry.item, defaultPrice, dto)
+							end
+							if isAlreadyListed then
+								ImGui.PopStyleVar()
+							end
+
+							ImGui.PopStyleColor(3)
 						else
-							local isAlreadyListed = false
-							for _, hEntry in ipairs(state.priceHistory) do
-								if hEntry.item:lower() == entry.item:lower() then
-									isAlreadyListed = true
-									break
-								end
-							end
+							ImGui.Text("-")
+						end
 
-							if entry.status == "Success" and entry.hasData and entry.medianPlatPrice then
-								if isAlreadyListed then
-									ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
-								end
-								if ImGui.Button("+##bulk_add_" .. index, -1, 18) and not isAlreadyListed then
-									queueSearch(state, entry.item)
-								end
-								if isAlreadyListed then
-									ImGui.PopStyleVar()
-								end
-							elseif entry.status == "Success" and (not entry.hasData or not entry.medianPlatPrice) then
-								ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.15, 0.15, 1.0)
-								ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.8, 0.25, 0.25, 1.0)
-								ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.5, 0.1, 0.1, 1.0)
-
-								if isAlreadyListed then
-									ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
-								end
-								if ImGui.Button("+##bulk_add_no_price_" .. index, -1, 18) and not isAlreadyListed then
-									local defaultPrice = (state.config and state.config.defaultPlatPrice) or 1000
-									state:addHistoryEntryWithDefaultPrice(entry.item, defaultPrice, dto)
-								end
-								if isAlreadyListed then
-									ImGui.PopStyleVar()
-								end
-
-								ImGui.PopStyleColor(3)
-							else
-								ImGui.Text("-")
-							end
+						-- Column 4: SetItem Button
+						ImGui.TableSetColumnIndex(4)
+						if not canSetItem then
+							ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
+						end
+						if ImGui.Button("SetItem##bulk_set_" .. index, -1, 18) and canSetItem then
+							chat.executeCommand(string.format('/setitem sell "%s"', entry.item))
+						end
+						if not canSetItem then
+							ImGui.PopStyleVar()
 						end
 					end
 					ImGui.EndTable()
@@ -492,7 +542,7 @@ function ui.render(state)
 					ImGuiTableFlags.Sortable
 				)
 
-				if ImGui.BeginTable("HistoryTable", 10, flags, 0, 0) then
+				if ImGui.BeginTable("HistoryTable", 11, flags, 0, 0) then
 					ImGui.TableSetupColumn("Rem", bit32.bor(ImGuiTableColumnFlags.WidthFixed, ImGuiTableColumnFlags.NoSort), 30)
 					ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
 					ImGui.TableSetupColumn("Qty (Bank)", ImGuiTableColumnFlags.WidthFixed, 70)
@@ -503,6 +553,7 @@ function ui.render(state)
 					ImGui.TableSetupColumn("Avg Buy", ImGuiTableColumnFlags.WidthFixed, 75)
 					ImGui.TableSetupColumn("High WTB", ImGuiTableColumnFlags.WidthFixed, 70)
 					ImGui.TableSetupColumn("Details", bit32.bor(ImGuiTableColumnFlags.WidthFixed, ImGuiTableColumnFlags.NoSort), 55)
+					ImGui.TableSetupColumn("SetItem", bit32.bor(ImGuiTableColumnFlags.WidthFixed, ImGuiTableColumnFlags.NoSort), 65)
 					ImGui.TableHeadersRow()
 
 					local sortSpecs = ImGui.TableGetSortSpecs()
@@ -684,6 +735,18 @@ function ui.render(state)
 							end
 						else
 							ImGui.Text("-")
+						end
+
+						-- Column 10: SetItem Button
+						ImGui.TableSetColumnIndex(10)
+						if not canSetItem then
+							ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
+						end
+						if ImGui.Button("SetItem##hist_set_" .. entry.id, -1, 18) and canSetItem then
+							chat.executeCommand(string.format('/setitem sell "%s"', entry.item))
+						end
+						if not canSetItem then
+							ImGui.PopStyleVar()
 						end
 					end
 

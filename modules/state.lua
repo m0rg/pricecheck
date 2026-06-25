@@ -538,4 +538,29 @@ function stateManager:clearCursorQueryPending()
 	self._data.cursorQueryPending = false
 end
 
+function stateManager:addAllBulkItems(dto)
+	logger.log("\ar[PriceCheck State]\ax adding all bulk items to trade history")
+	local defaultPrice = (self._data.config and self._data.config.defaultPlatPrice) or 1000
+	for _, entry in ipairs(self._data.bulkPriceHistory) do
+		-- Check if already listed
+		local alreadyListed = false
+		for _, hEntry in ipairs(self._data.priceHistory) do
+			if hEntry.item:lower() == entry.item:lower() then
+				alreadyListed = true
+				break
+			end
+		end
+
+		if not alreadyListed then
+			if entry.status == "Success" and entry.hasData and entry.medianPlatPrice then
+				-- Add to search queue
+				self:queueSearch(entry.item, dto)
+			else
+				-- Add with default price
+				self:addHistoryEntryWithDefaultPrice(entry.item, defaultPrice, dto)
+			end
+		end
+	end
+end
+
 return stateManager
