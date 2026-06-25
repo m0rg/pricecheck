@@ -1,30 +1,23 @@
 local mq = require("mq")
+local printf = mq.printf
 
 math.randomseed(os.time())
 
--- Use dynamic module paths relative to script invocation to support standard loading
-local myPath = ...
-if myPath then
-	-- Strip trailing .init if present
-	myPath = myPath:gsub("%.init$", "")
-	myPath = myPath .. "."
-else
-	myPath = "pricecheck."
-end
-
-local ui = require(myPath .. "modules.ui")
-local http = require(myPath .. "modules.http")
+local ui = require("pricecheck.modules.ui")
+local http = require("pricecheck.modules.http")
 local PackageMan = require("mq/PackageMan")
 local json = PackageMan.Require("lua-cjson", "cjson")
-local storage = require(myPath .. "modules.storage")
-local char = require(myPath .. "modules.char")
-local dto = require(myPath .. "modules.dto")
-local chat = require(myPath .. "modules.chat")
-local util = require(myPath .. "modules.util")
+local storage = require("pricecheck.modules.storage")
+local char = require("pricecheck.modules.char")
+local dto = require("pricecheck.modules.dto")
+local chat = require("pricecheck.modules.chat")
+local util = require("pricecheck.modules.util")
 
--- Initialize UI and Chat modules with dependencies (SRP / DI)
+-- Initialize modules with dependencies (SRP / DI)
 ui.setup(char, dto, chat, util)
 chat.setup(dto)
+storage.setup(json)
+http.setup(json)
 
 local state
 
@@ -42,7 +35,7 @@ local function saveConfig()
 	end
 	local success, err = storage.saveConfig(state.config)
 	if not success then
-		mq.print(string.format("\ar[PriceCheck] Error saving configuration: %s\ax", err or "unknown error"))
+		printf("\ar[PriceCheck] Error saving configuration: %s\ax", err or "unknown error")
 	end
 end
 
@@ -52,7 +45,7 @@ local function saveHistory()
 	end
 	local success, err = storage.saveHistory(state.priceHistory)
 	if not success then
-		mq.print(string.format("\ar[PriceCheck] Error saving price history: %s\ax", err or "unknown error"))
+		printf("\ar[PriceCheck] Error saving price history: %s\ax", err or "unknown error")
 	end
 end
 
@@ -155,7 +148,7 @@ while state.openGUI do
 		local entry = table.remove(state.searchQueue, 1)
 		state.isSearching = true
 		local callbackCalled = false
-		local ok, err = pcall(http.performSearch, entry.item, function(success, data, statusText)
+		http.performSearch(entry.item, function(success, data, statusText)
 			callbackCalled = true
 			state.isSearching = false
 			entry.status = statusText
@@ -176,7 +169,7 @@ while state.openGUI do
 			saveHistory()
 		end)
 
-		if not ok or not callbackCalled then
+		if not callbackCalled then
 			state.isSearching = false
 			entry.status = "Error"
 
@@ -188,7 +181,7 @@ while state.openGUI do
 		state.bulkQueue = {}
 		state.isBulkSearching = true
 		local callbackCalled = false
-		local ok, err = pcall(http.performBulkSearch, ids, function(result, success, errMsg)
+		http.performBulkSearch(ids, function(result, success, errMsg)
 			callbackCalled = true
 			if success and result then
 				state.bulkLastUpdated = result.lastUpdated
@@ -244,7 +237,7 @@ while state.openGUI do
 			state.isBulkSearching = false
 		end)
 
-		if not ok or not callbackCalled then
+		if not callbackCalled then
 			state.isBulkSearching = false
 			for _, itemId in ipairs(ids) do
 				for _, existing in ipairs(state.bulkPriceHistory) do

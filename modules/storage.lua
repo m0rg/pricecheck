@@ -1,8 +1,11 @@
 local mq = require("mq")
-local PackageMan = require("mq/PackageMan")
-local json = PackageMan.Require("lua-cjson", "cjson")
 
 local storage = {}
+local json
+
+function storage.setup(jsonModule)
+	json = jsonModule
+end
 
 function storage.loadConfig(defaultConfig)
 	local savePath = string.format("%s/pricecheck_config.json", mq.configDir or ".")

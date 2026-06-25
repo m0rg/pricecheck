@@ -1,11 +1,14 @@
-local PackageMan = require("mq/PackageMan")
 local mq = require("mq")
-local json = PackageMan.Require("lua-cjson", "cjson")
 local ltn12 = require("ltn12")
 
 local ssl_ok, https = pcall(require, "ssl.https")
 
 local http = {}
+local json
+
+function http.setup(jsonModule)
+	json = jsonModule
+end
 
 -- Helper function to properly percent-encode URL parameters
 function http.urlEncode(str)
