@@ -12,6 +12,7 @@ math.randomseed(os.time())
 local ui = require("pricecheck.modules.ui")
 local http = require("pricecheck.modules.http")
 local stateManager = require("pricecheck.modules.state")
+local logger = require("pricecheck.modules.log")
 
 local storage = require("pricecheck.modules.storage")
 local char = require("pricecheck.modules.char")
@@ -33,6 +34,7 @@ local defaultConfig = {
 	debounceMax = 600,
 	replyMessage = "Sure, near Parcel",
 	broadcastInterval = 120,
+	debug = true,
 }
 
 local function saveConfig()
@@ -41,7 +43,7 @@ local function saveConfig()
 	end
 	local success, err = storage.saveConfig(state.config)
 	if not success then
-		printf("\ar[PriceCheck] Error saving configuration: %s\ax", err or "unknown error")
+		logger.log("\ar[PriceCheck] Error saving configuration: %s\ax", err or "unknown error")
 	end
 end
 
@@ -51,7 +53,7 @@ local function saveHistory()
 	end
 	local success, err = storage.saveHistory(state.priceHistory)
 	if not success then
-		printf("\ar[PriceCheck] Error saving price history: %s\ax", err or "unknown error")
+		logger.log("\ar[PriceCheck] Error saving price history: %s\ax", err or "unknown error")
 	end
 end
 
@@ -84,6 +86,7 @@ end
 
 -- Shared state context table (encapsulating all state without using globals)
 state = stateManager.new(loadedHistory, loadedConfig, initialBulkHistory)
+logger.setup(state)
 
 -- Write back the config on boot
 

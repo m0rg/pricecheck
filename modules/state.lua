@@ -1,4 +1,5 @@
 local mq = require("mq")
+local logger = require("pricecheck.modules.log")
 
 local stateManager = {}
 
@@ -47,42 +48,42 @@ end
 
 function stateManager:setOpenGUI(open)
 	if self._data.openGUI ~= open then
-		mq.printf("\ar[PriceCheck State]\ax openGUI changed from %s to %s", tostring(self._data.openGUI), tostring(open))
+		logger.log("\ar[PriceCheck State]\ax openGUI changed from %s to %s", tostring(self._data.openGUI), tostring(open))
 		self._data.openGUI = open
 	end
 end
 
 function stateManager:setSearching(searching)
 	if self._data.isSearching ~= searching then
-		mq.printf("\ar[PriceCheck State]\ax isSearching changed from %s to %s", tostring(self._data.isSearching), tostring(searching))
+		logger.log("\ar[PriceCheck State]\ax isSearching changed from %s to %s", tostring(self._data.isSearching), tostring(searching))
 		self._data.isSearching = searching
 	end
 end
 
 function stateManager:setBulkSearching(searching)
 	if self._data.isBulkSearching ~= searching then
-		mq.printf("\ar[PriceCheck State]\ax isBulkSearching changed from %s to %s", tostring(self._data.isBulkSearching), tostring(searching))
+		logger.log("\ar[PriceCheck State]\ax isBulkSearching changed from %s to %s", tostring(self._data.isBulkSearching), tostring(searching))
 		self._data.isBulkSearching = searching
 	end
 end
 
 function stateManager:setBroadcastingToggled(toggled)
 	if self._data.isBroadcastingToggled ~= toggled then
-		mq.printf("\ar[PriceCheck State]\ax isBroadcastingToggled changed from %s to %s", tostring(self._data.isBroadcastingToggled), tostring(toggled))
+		logger.log("\ar[PriceCheck State]\ax isBroadcastingToggled changed from %s to %s", tostring(self._data.isBroadcastingToggled), tostring(toggled))
 		self._data.isBroadcastingToggled = toggled
 	end
 end
 
 function stateManager:setNextToggleBroadcastTime(t)
 	if self._data.nextToggleBroadcastTime ~= t then
-		mq.printf("\ar[PriceCheck State]\ax nextToggleBroadcastTime changed from %s to %s", tostring(self._data.nextToggleBroadcastTime), tostring(t))
+		logger.log("\ar[PriceCheck State]\ax nextToggleBroadcastTime changed from %s to %s", tostring(self._data.nextToggleBroadcastTime), tostring(t))
 		self._data.nextToggleBroadcastTime = t
 	end
 end
 
 function stateManager:setBroadcastCommand(cmd)
 	if self._data.broadcastCommand ~= cmd then
-		mq.printf("\ar[PriceCheck State]\ax broadcastCommand changed from %q to %q", tostring(self._data.broadcastCommand), tostring(cmd))
+		logger.log("\ar[PriceCheck State]\ax broadcastCommand changed from %q to %q", tostring(self._data.broadcastCommand), tostring(cmd))
 		self._data.broadcastCommand = cmd
 	end
 end
@@ -91,35 +92,35 @@ function stateManager:setActiveDetailEntry(entry)
 	if self._data.activeDetailEntry ~= entry then
 		local oldName = self._data.activeDetailEntry and self._data.activeDetailEntry.item or "nil"
 		local newName = entry and entry.item or "nil"
-		mq.printf("\ar[PriceCheck State]\ax activeDetailEntry changed from %s to %s", oldName, newName)
+		logger.log("\ar[PriceCheck State]\ax activeDetailEntry changed from %s to %s", oldName, newName)
 		self._data.activeDetailEntry = entry
 	end
 end
 
 function stateManager:requestSave()
 	if not self._data.saveRequested then
-		mq.printf("\ar[PriceCheck State]\ax saveRequested set to true")
+		logger.log("\ar[PriceCheck State]\ax saveRequested set to true")
 		self._data.saveRequested = true
 	end
 end
 
 function stateManager:clearSaveRequest()
 	if self._data.saveRequested then
-		mq.printf("\ar[PriceCheck State]\ax saveRequested cleared (false)")
+		logger.log("\ar[PriceCheck State]\ax saveRequested cleared (false)")
 		self._data.saveRequested = false
 	end
 end
 
 function stateManager:requestConfigSave()
 	if not self._data.configSaveRequested then
-		mq.printf("\ar[PriceCheck State]\ax configSaveRequested set to true")
+		logger.log("\ar[PriceCheck State]\ax configSaveRequested set to true")
 		self._data.configSaveRequested = true
 	end
 end
 
 function stateManager:clearConfigSaveRequest()
 	if self._data.configSaveRequested then
-		mq.printf("\ar[PriceCheck State]\ax configSaveRequested cleared (false)")
+		logger.log("\ar[PriceCheck State]\ax configSaveRequested cleared (false)")
 		self._data.configSaveRequested = false
 	end
 end
@@ -137,14 +138,14 @@ function stateManager:setTellToRemove(tell)
 end
 
 function stateManager:clearBulkHistory()
-	mq.printf("\ar[PriceCheck State]\ax bulkPriceHistory cleared")
+	logger.log("\ar[PriceCheck State]\ax bulkPriceHistory cleared")
 	self._data.bulkPriceHistory = {}
 	self._data.bulkLastUpdated = nil
 	self._data.bulkKronoRate = nil
 end
 
 function stateManager:setBulkQueue(ids)
-	mq.printf("\ar[PriceCheck State]\ax bulkQueue set to %d IDs", #ids)
+	logger.log("\ar[PriceCheck State]\ax bulkQueue set to %d IDs", #ids)
 	self._data.bulkQueue = ids
 end
 
@@ -153,18 +154,18 @@ function stateManager:setBulkPriceHistory(history)
 end
 
 function stateManager:setBulkResults(kronoRate, lastUpdated)
-	mq.printf("\ar[PriceCheck State]\ax bulk results received - Krono Rate: %s, Last Updated: %s", tostring(kronoRate), tostring(lastUpdated))
+	logger.log("\ar[PriceCheck State]\ax bulk results received - Krono Rate: %s, Last Updated: %s", tostring(kronoRate), tostring(lastUpdated))
 	self._data.bulkKronoRate = kronoRate or self._data.bulkKronoRate
 	self._data.bulkLastUpdated = lastUpdated or self._data.bulkLastUpdated
 end
 
 function stateManager:enqueueSearch(entry)
-	mq.printf("\ar[PriceCheck State]\ax search queued for %q", entry.item)
+	logger.log("\ar[PriceCheck State]\ax search queued for %q", entry.item)
 	table.insert(self._data.searchQueue, entry)
 end
 
 function stateManager:enqueueBroadcast(lines)
-	mq.printf("\ar[PriceCheck State]\ax enqueuing %d lines to broadcastQueue", #lines)
+	logger.log("\ar[PriceCheck State]\ax enqueuing %d lines to broadcastQueue", #lines)
 	for _, line in ipairs(lines) do
 		table.insert(self._data.broadcastQueue, line)
 	end
@@ -172,20 +173,20 @@ end
 
 function stateManager:clearBroadcastQueue()
 	if #self._data.broadcastQueue > 0 then
-		mq.printf("\ar[PriceCheck State]\ax broadcastQueue cleared")
+		logger.log("\ar[PriceCheck State]\ax broadcastQueue cleared")
 		self._data.broadcastQueue = {}
 	end
 end
 
 function stateManager:clearSearchQueue()
 	if #self._data.searchQueue > 0 then
-		mq.printf("\ar[PriceCheck State]\ax searchQueue cleared")
+		logger.log("\ar[PriceCheck State]\ax searchQueue cleared")
 		self._data.searchQueue = {}
 	end
 end
 
 function stateManager:clearHistory()
-	mq.printf("\ar[PriceCheck State]\ax priceHistory cleared")
+	logger.log("\ar[PriceCheck State]\ax priceHistory cleared")
 	self._data.priceHistory = {}
 	self._data.searchQueue = {}
 	self._data.activeDetailEntry = nil
@@ -198,7 +199,7 @@ function stateManager:removeHistoryEntryById(id)
 	for idx = 1, #self._data.priceHistory do
 		if self._data.priceHistory[idx].id == id then
 			local entry = table.remove(self._data.priceHistory, idx)
-			mq.printf("\ar[PriceCheck State]\ax removed history entry %q by ID", entry.item)
+			logger.log("\ar[PriceCheck State]\ax removed history entry %q by ID", entry.item)
 			self:requestSave()
 			break
 		end
@@ -210,7 +211,7 @@ function stateManager:failHistorySearchIfSearching(id)
 		if self._data.priceHistory[idx].id == id then
 			if self._data.priceHistory[idx].status == "Searching..." then
 				self._data.priceHistory[idx].status = "Failed"
-				mq.printf("\ar[PriceCheck State]\ax failed searching status for %q", self._data.priceHistory[idx].item)
+				logger.log("\ar[PriceCheck State]\ax failed searching status for %q", self._data.priceHistory[idx].item)
 				self:requestSave()
 			end
 			break
@@ -221,7 +222,7 @@ end
 function stateManager:popSearchQueue()
 	if #self._data.searchQueue > 0 then
 		local entry = table.remove(self._data.searchQueue, 1)
-		mq.printf("\ar[PriceCheck State]\ax popped %q from searchQueue", entry.item)
+		logger.log("\ar[PriceCheck State]\ax popped %q from searchQueue", entry.item)
 		return entry
 	end
 	return nil
@@ -241,9 +242,9 @@ function stateManager:updateSearchFinished(entry, success, data, statusText)
 			listedPrice = math.ceil(avgSell / 100) * 100
 		end
 		entry.listedPrice = listedPrice
-		mq.printf("\ar[PriceCheck State]\ax search finished for %q (Success: %s, Listed Price: %d)", entry.item, tostring(success), listedPrice)
+		logger.log("\ar[PriceCheck State]\ax search finished for %q (Success: %s, Listed Price: %d)", entry.item, tostring(success), listedPrice)
 	else
-		mq.printf("\ar[PriceCheck State]\ax search finished for %q (Failed: %s)", entry.item, tostring(statusText))
+		logger.log("\ar[PriceCheck State]\ax search finished for %q (Failed: %s)", entry.item, tostring(statusText))
 	end
 	self:requestSave()
 end
@@ -299,7 +300,7 @@ function stateManager:updateBulkSearchResults(ids, result, success, errMsg, dto)
 end
 
 function stateManager:startBulkSearch(items)
-	mq.printf("\ar[PriceCheck State]\ax starting bulk search for %d items", #items)
+	logger.log("\ar[PriceCheck State]\ax starting bulk search for %d items", #items)
 	self._data.bulkPriceHistory = {}
 	local ids = {}
 	for _, item in ipairs(items) do
@@ -318,12 +319,12 @@ end
 
 function stateManager:sortBulkHistory(compareFunc)
 	table.sort(self._data.bulkPriceHistory, compareFunc)
-	mq.printf("\ar[PriceCheck State]\ax bulkPriceHistory sorted")
+	logger.log("\ar[PriceCheck State]\ax bulkPriceHistory sorted")
 end
 
 function stateManager:sortPriceHistory(compareFunc)
 	table.sort(self._data.priceHistory, compareFunc)
-	mq.printf("\ar[PriceCheck State]\ax priceHistory sorted")
+	logger.log("\ar[PriceCheck State]\ax priceHistory sorted")
 	self:requestSave()
 end
 
@@ -345,7 +346,7 @@ function stateManager:recheckQty(getItemCounts)
 			end
 			table.remove(self._data.priceHistory, i)
 			removedAny = true
-			mq.printf("\ar[PriceCheck State]\ax removed entry %q due to 0 quantity", entry.item)
+			logger.log("\ar[PriceCheck State]\ax removed entry %q due to 0 quantity", entry.item)
 		else
 			i = i + 1
 		end
@@ -357,7 +358,7 @@ end
 
 function stateManager:updateListedPrice(entry, val)
 	if entry.listedPrice ~= val then
-		mq.printf("\ar[PriceCheck State]\ax listedPrice for %q changed from %s to %s", tostring(entry.item), tostring(entry.listedPrice), tostring(val))
+		logger.log("\ar[PriceCheck State]\ax listedPrice for %q changed from %s to %s", tostring(entry.item), tostring(entry.listedPrice), tostring(val))
 		entry.listedPrice = val
 		self:requestSave()
 	end
@@ -376,7 +377,7 @@ function stateManager:removePendingItem()
 	end
 	if foundIdx then
 		local entry = self._data.priceHistory[foundIdx]
-		mq.printf("\ar[PriceCheck State]\ax removing item %q from history", entry.item)
+		logger.log("\ar[PriceCheck State]\ax removing item %q from history", entry.item)
 		if self._data.activeDetailEntry == entry then
 			self._data.activeDetailEntry = nil
 		end
@@ -394,7 +395,7 @@ end
 
 function stateManager:updateConfigKey(key, value)
 	if self._data.config[key] ~= value then
-		mq.printf("\ar[PriceCheck State]\ax config.%s changed from %s to %s", tostring(key), tostring(self._data.config[key]), tostring(value))
+		logger.log("\ar[PriceCheck State]\ax config.%s changed from %s to %s", tostring(key), tostring(self._data.config[key]), tostring(value))
 		self._data.config[key] = value
 		self:requestConfigSave()
 	end
@@ -407,7 +408,7 @@ function stateManager:removePendingTell()
 	for i, t in ipairs(self._data.receivedTells) do
 		if t == tellToRemove then
 			table.remove(self._data.receivedTells, i)
-			mq.printf("\ar[PriceCheck State]\ax removed tell from %s", tostring(t.sender))
+			logger.log("\ar[PriceCheck State]\ax removed tell from %s", tostring(t.sender))
 			break
 		end
 	end
@@ -417,13 +418,13 @@ end
 function stateManager:addReceivedTell(sender, message, dto)
 	local entry = dto.newTellEntry(sender, message)
 	table.insert(self._data.receivedTells, entry)
-	mq.printf("\ar[PriceCheck State]\ax tell received from %s: %s", sender, message)
+	logger.log("\ar[PriceCheck State]\ax tell received from %s: %s", sender, message)
 end
 
 function stateManager:popBroadcastQueue()
 	if #self._data.broadcastQueue > 0 then
 		local line = table.remove(self._data.broadcastQueue, 1)
-		mq.printf("\ar[PriceCheck State]\ax popped line from broadcastQueue: %q", line)
+		logger.log("\ar[PriceCheck State]\ax popped line from broadcastQueue: %q", line)
 		return line
 	end
 	return nil
@@ -458,14 +459,14 @@ function stateManager:queueSearch(itemName, dto)
 			existingEntry.data = nil
 			table.insert(self._data.searchQueue, existingEntry)
 			self:requestSave()
-			mq.printf("\ar[PriceCheck State]\ax search queued for existing entry %q", itemName)
+			logger.log("\ar[PriceCheck State]\ax search queued for existing entry %q", itemName)
 		end
 	else
 		local entry = dto.newHistoryEntry(itemName, "Searching...")
 		table.insert(self._data.priceHistory, 1, entry)
 		table.insert(self._data.searchQueue, entry)
 		self:requestSave()
-		mq.printf("\ar[PriceCheck State]\ax search queued for new entry %q", itemName)
+		logger.log("\ar[PriceCheck State]\ax search queued for new entry %q", itemName)
 	end
 end
 

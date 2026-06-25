@@ -830,6 +830,12 @@ function ui.render(state)
 				end
 				ImGui.PopItemWidth()
 
+				ImGui.Spacing()
+				local valDebug, changedDebug = ImGui.Checkbox("Enable Debug Logging", state.config.debug or false)
+				if changedDebug then
+					state:updateConfigKey("debug", valDebug)
+				end
+
 				ImGui.EndTabItem()
 			else
 				ImGui.PopStyleColor(3)
