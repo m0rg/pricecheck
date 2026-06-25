@@ -27,6 +27,7 @@ local defaultConfig = {
 	debounceMin = 400,
 	debounceMax = 600,
 	replyMessage = "Sure, near Parcel",
+	broadcastInterval = 120,
 }
 
 local function saveConfig()
@@ -113,6 +114,23 @@ local filterIndex = 1
 -- Main script loop (running in the safe script coroutine thread)
 while state.openGUI do
 	mq.doevents()
+
+	-- Handle toggled interval broadcasting
+	if state.isBroadcastingToggled then
+		local now = os.time()
+		if not state.nextToggleBroadcastTime then
+			state.nextToggleBroadcastTime = now + (state.config.broadcastInterval or 120)
+		end
+		if now >= state.nextToggleBroadcastTime then
+			local realAuctionLines = ui.getAuctionLines(state, true)
+			for _, commandLine in ipairs(realAuctionLines) do
+				table.insert(state.broadcastQueue, commandLine)
+			end
+			state.nextToggleBroadcastTime = now + (state.config.broadcastInterval or 120)
+		end
+	else
+		state.nextToggleBroadcastTime = nil
+	end
 
 	-- Non-blocking startup history filtering step (processes one entry from static queue per loop iteration)
 	if needHistoryFilter then

@@ -90,7 +90,7 @@ local function generateItemSegments(state, useLinks)
 end
 
 -- Function to package segments into lines capped at 4 items each
-local function getAuctionLines(state, useLinks)
+function ui.getAuctionLines(state, useLinks)
 	local segments = generateItemSegments(state, useLinks)
 	if #segments == 0 then
 		return {}
@@ -446,7 +446,7 @@ function ui.render(state)
 				state.broadcastCommand = ImGui.InputText("Chat Command", state.broadcastCommand)
 
 				ImGui.Text("Preview String(s) (Plain Text, Max 4 items per line):")
-				local previewLines = getAuctionLines(state, false)
+				local previewLines = ui.getAuctionLines(state, false)
 				local previewText = table.concat(previewLines, "\n")
 				if previewText == "" then
 					previewText = "No items or no valid prices available."
@@ -457,8 +457,8 @@ function ui.render(state)
 				ImGui.PopStyleColor()
 
 				local hasItemsToBroadcast = (#previewLines > 0)
-				local isBroadcasting = (#state.broadcastQueue > 0)
-				local canBroadcast = hasItemsToBroadcast and not isBroadcasting
+				local isToggled = not not state.isBroadcastingToggled
+				local canBroadcast = hasItemsToBroadcast or isToggled
 
 				if not canBroadcast then
 					ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
@@ -467,14 +467,35 @@ function ui.render(state)
 				local avail = ImGui.GetContentRegionAvail()
 				local buttonWidth = (avail - ImGui.GetStyle().ItemSpacing.x) / 2
 
-				local buttonLabel = isBroadcasting and "Broadcasting..."
-					or string.format("Broadcast via %s", (state.broadcastCommand ~= "" and state.broadcastCommand or "/auction"))
+				local buttonLabel
+				if isToggled then
+					local remaining = math.max(0, (state.nextToggleBroadcastTime or os.time()) - os.time())
+					buttonLabel = string.format("Stop Broadcast (%ds)", remaining)
+					ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.15, 0.15, 1.0)
+					ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.8, 0.25, 0.25, 1.0)
+					ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.5, 0.1, 0.1, 1.0)
+				else
+					buttonLabel = string.format("Broadcast via %s", (state.broadcastCommand ~= "" and state.broadcastCommand or "/auction"))
+				end
+
 				if ImGui.Button(buttonLabel, buttonWidth, 30) and canBroadcast then
-					local realAuctionLines = getAuctionLines(state, true)
-					for _, commandLine in ipairs(realAuctionLines) do
-						table.insert(state.broadcastQueue, commandLine)
+					if isToggled then
+						state.isBroadcastingToggled = false
+						state.broadcastQueue = {}
+					else
+						state.isBroadcastingToggled = true
+						local realAuctionLines = ui.getAuctionLines(state, true)
+						for _, commandLine in ipairs(realAuctionLines) do
+							table.insert(state.broadcastQueue, commandLine)
+						end
+						state.nextToggleBroadcastTime = os.time() + (state.config.broadcastInterval or 120)
 					end
 				end
+
+				if isToggled then
+					ImGui.PopStyleColor(3)
+				end
+
 				if not canBroadcast then
 					ImGui.PopStyleVar()
 				end
@@ -915,6 +936,16 @@ function ui.render(state)
 					state.config.replyMessage = valReply
 				end
 				if changedReply then
+					state.configSaveRequested = true
+				end
+				ImGui.PopItemWidth()
+
+				ImGui.Spacing()
+				ImGui.Text("Broadcast Interval (seconds):")
+				ImGui.PushItemWidth(-1)
+				local valBroadcastInterval, changedBroadcastInterval = ImGui.SliderInt("##broadcast_interval", state.config.broadcastInterval or 120, 120, 1200, "%d seconds")
+				if changedBroadcastInterval then
+					state.config.broadcastInterval = valBroadcastInterval
 					state.configSaveRequested = true
 				end
 				ImGui.PopItemWidth()

@@ -19,20 +19,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Prepare pricechecker directory
+      - name: Prepare pricecheck directory
         run: |
-          mkdir pricechecker
-          cp *.lua pricechecker/
+          mkdir pricecheck
+          cp *.lua pricecheck/
+          cp -r modules pricecheck/
 
-      - name: Zip pricechecker directory
+      - name: Zip pricecheck directory
         run: |
-          zip -r pricechecker.zip pricechecker
+          zip -r pricecheck.zip pricecheck
 
       - name: Upload Zip Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pricechecker-zip
-          path: pricechecker.zip
+          name: pricecheck-zip
+          path: pricecheck.zip
 
       - name: Bump version and push tag
         id: tag_version
@@ -51,4 +52,4 @@ jobs:
           tag_name: ${{ steps.tag_version.outputs.new_tag }}
           name: Release ${{ steps.tag_version.outputs.new_tag }}
           generate_release_notes: true
-          files: pricechecker.zip
+          files: pricecheck.zip
