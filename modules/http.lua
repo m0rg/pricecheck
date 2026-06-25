@@ -27,28 +27,31 @@ function http.tick()
 	end
 
 	while true do
-		local easy, ok, err = multi:info_read()
-		if not easy then
+		local msg, easy, err = multi:info_read()
+		if not msg then
 			break
 		end
 
-		local req = activeRequests[easy]
-		if req then
-			activeRequests[easy] = nil
-			multi:remove_handle(easy)
+		if easy then
+			local req = activeRequests[easy]
+			if req then
+				activeRequests[easy] = nil
+				multi:remove_handle(easy)
 
-			local code = easy:getinfo(curl.INFO_RESPONSE_CODE)
-			easy:close()
+				local code = easy:getinfo(curl.INFO_RESPONSE_CODE)
+				easy:close()
 
-			local responseText = table.concat(req.body)
-			if ok and code == 200 then
-				req.onComplete(true, responseText)
+				local responseText = table.concat(req.body)
+				local isSuccess = (err == 0)
+				if isSuccess and code == 200 then
+					req.onComplete(true, responseText)
+				else
+					req.onComplete(false, nil, "CURL Error " .. tostring(err) .. " (HTTP " .. tostring(code) .. ")")
+				end
 			else
-				req.onComplete(false, nil, err or ("HTTP " .. tostring(code)))
+				multi:remove_handle(easy)
+				easy:close()
 			end
-		else
-			multi:remove_handle(easy)
-			easy:close()
 		end
 	end
 end
