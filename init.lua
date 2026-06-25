@@ -1,16 +1,19 @@
 local mq = require("mq")
-local printf = mq.printf
+
+local PackageMan = require("mq/PackageMan")
+PackageMan.debug = true
+local json = PackageMan.Require("lua-cjson", "cjson")
+local luasocket = PackageMan.Require("luasocket", "socket")
+local ssl_ok, https = pcall(PackageMan.Require, "luasec", "ssl.https")
+if not ssl_ok then
+	https = nil
+end
 
 math.randomseed(os.time())
 
 local ui = require("pricecheck.modules.ui")
 local http = require("pricecheck.modules.http")
-local PackageMan = require("mq/PackageMan")
-local json = PackageMan.Require("lua-cjson", "cjson")
-local ssl_ok, https = pcall(PackageMan.Require, "luasec", "ssl.https")
-if not ssl_ok then
-	https = nil
-end
+
 local storage = require("pricecheck.modules.storage")
 local char = require("pricecheck.modules.char")
 local dto = require("pricecheck.modules.dto")
@@ -20,7 +23,6 @@ local util = require("pricecheck.modules.util")
 -- Initialize modules with dependencies (SRP / DI)
 ui.setup(char, dto, chat, util)
 chat.setup(dto)
-storage.setup(json)
 http.setup(json, https)
 
 local state
