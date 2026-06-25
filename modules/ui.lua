@@ -591,7 +591,15 @@ function ui.render(state)
 							end
 						end
 						local displayName = (entry.data and entry.data.item) or entry.item
-						ImGui.Text(displayName)
+						ImGui.TextColored(0.4, 0.8, 1.0, 1.0, displayName)
+						if ImGui.IsItemHovered() then
+							ImGui.BeginTooltip()
+							ImGui.Text("Click to view standalone price details")
+							ImGui.EndTooltip()
+						end
+						if ImGui.IsItemClicked() then
+							state:requestCursorQuery(entry.item)
+						end
 
 						-- Column 2: Qty (Bank)
 						ImGui.TableSetColumnIndex(2)
