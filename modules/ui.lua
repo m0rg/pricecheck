@@ -113,41 +113,7 @@ end
 
 -- Helper function to queue a price check and immediately create or update the history placeholder
 local function queueSearch(state, itemName)
-	if not itemName or itemName == "" then
-		return
-	end
-
-	-- Check if the item already exists in history (case-insensitive lookup)
-	local existingEntry = nil
-	local existingIndex = nil
-	for i, entry in ipairs(state.priceHistory) do
-		if entry.item:lower() == itemName:lower() then
-			existingEntry = entry
-			existingIndex = i
-			break
-		end
-	end
-
-	if existingEntry then
-		-- Move existing entry to the top of the history list for visibility
-		if existingIndex > 1 then
-			table.remove(state.priceHistory, existingIndex)
-			table.insert(state.priceHistory, 1, existingEntry)
-			state.saveRequested = true
-		end
-
-		if existingEntry.status ~= "Searching..." then
-			existingEntry.status = "Searching..."
-			existingEntry.data = nil
-			table.insert(state.searchQueue, existingEntry)
-			state.saveRequested = true
-		end
-	else
-		local entry = dto.newHistoryEntry(itemName, "Searching...")
-		table.insert(state.priceHistory, 1, entry)
-		table.insert(state.searchQueue, entry)
-		state.saveRequested = true
-	end
+	state:queueSearch(itemName, dto)
 end
 
 -- Helper function to render detailed log data inside an ImGui tooltip on hover
@@ -209,7 +175,9 @@ function ui.render(state)
 	ImGui.SetNextWindowSize(550, 520, ImGuiCond.FirstUseEver)
 
 	local open, shouldDraw = ImGui.Begin("Frostreaver Trade Tools", state.openGUI)
-	state.openGUI = open
+	if state.openGUI ~= open then
+		state:setOpenGUI(open)
+	end
 	if shouldDraw then
 		local cursorItemName = char.getCursorItemName()
 
@@ -255,24 +223,7 @@ function ui.render(state)
 				end
 				if ImGui.Button(state.isBulkSearching and "Pricing Inventory..." or "BULK PRICE CHECK", -1, 30) and canBulkSearch then
 					local items = char.getUniqueInventoryItemTypes()
-					state.bulkPriceHistory = {}
-					state.bulkQueue = {}
-
-					-- Populate bulkPriceHistory with placeholder entries and collect IDs
-					local ids = {}
-					for _, item in ipairs(items) do
-						table.insert(ids, item.id)
-						table.insert(state.bulkPriceHistory, {
-							itemId = item.id,
-							item = item.name,
-							medianPlatPrice = nil,
-							hasData = false,
-							status = "Searching...",
-						})
-					end
-
-					state.bulkQueue = ids
-					state.isBulkSearching = (#ids > 0)
+					state:startBulkSearch(items)
 				end
 				if not canBulkSearch then
 					ImGui.PopStyleVar()
@@ -298,9 +249,7 @@ function ui.render(state)
 				ImGui.Text("BULK Price History:")
 				ImGui.SameLine(ImGui.GetWindowWidth() - 90)
 				if ImGui.Button("Clear##Bulk", 75, 0) then
-					state.bulkPriceHistory = {}
-					state.bulkLastUpdated = nil
-					state.bulkKronoRate = nil
+					state:clearBulkHistory()
 				end
 
 				local flags = bit32.bor(
@@ -322,7 +271,7 @@ function ui.render(state)
 					if sortSpecs and sortSpecs.SpecsDirty then
 						local spec = sortSpecs:Specs(1)
 						if spec then
-							table.sort(state.bulkPriceHistory, function(a, b)
+							state:sortBulkHistory(function(a, b)
 								local valA, valB
 
 								if spec.ColumnIndex == 0 then
@@ -443,7 +392,10 @@ function ui.render(state)
 				-- ----------------------------------------------------
 				ImGui.Text("Pricing & Sales Tool:")
 
-				state.broadcastCommand = ImGui.InputText("Chat Command", state.broadcastCommand)
+				local newBroadcastCmd, changedBroadcastCmd = ImGui.InputText("Chat Command", state.broadcastCommand)
+				if changedBroadcastCmd then
+					state:setBroadcastCommand(newBroadcastCmd)
+				end
 
 				ImGui.Text("Preview String(s) (Plain Text, Max 4 items per line):")
 				local previewLines = ui.getAuctionLines(state, false)
@@ -480,15 +432,13 @@ function ui.render(state)
 
 				if ImGui.Button(buttonLabel, buttonWidth, 30) and canBroadcast then
 					if isToggled then
-						state.isBroadcastingToggled = false
-						state.broadcastQueue = {}
+						state:setBroadcastingToggled(false)
+						state:clearBroadcastQueue()
 					else
-						state.isBroadcastingToggled = true
+						state:setBroadcastingToggled(true)
 						local realAuctionLines = ui.getAuctionLines(state, true)
-						for _, commandLine in ipairs(realAuctionLines) do
-							table.insert(state.broadcastQueue, commandLine)
-						end
-						state.nextToggleBroadcastTime = os.time() + (state.config.broadcastInterval or 120)
+						state:enqueueBroadcast(realAuctionLines)
+						state:setNextToggleBroadcastTime(os.time() + (state.config.broadcastInterval or 120))
 					end
 				end
 
@@ -503,30 +453,7 @@ function ui.render(state)
 				ImGui.SameLine()
 
 				if ImGui.Button("Recheck Qty", buttonWidth, 30) then
-					local removedAny = false
-					local i = 1
-					while i <= #state.priceHistory do
-						local entry = state.priceHistory[i]
-						local count, bankCount = char.getItemCounts(entry.item)
-						if count + bankCount == 0 then
-							if state.activeDetailEntry == entry then
-								state.activeDetailEntry = nil
-							end
-							for sqIdx, sqEntry in ipairs(state.searchQueue) do
-								if sqEntry == entry then
-									table.remove(state.searchQueue, sqIdx)
-									break
-								end
-							end
-							table.remove(state.priceHistory, i)
-							removedAny = true
-						else
-							i = i + 1
-						end
-					end
-					if removedAny then
-						state.saveRequested = true
-					end
+					state:recheckQty(char.getItemCounts)
 				end
 
 				ImGui.Separator()
@@ -537,10 +464,7 @@ function ui.render(state)
 				ImGui.Text("Price History:")
 				ImGui.SameLine(ImGui.GetWindowWidth() - 90)
 				if ImGui.Button("Clear All", 75, 0) then
-					state.priceHistory = {}
-					state.searchQueue = {}
-					state.activeDetailEntry = nil
-					state.saveRequested = true
+					state:clearHistory()
 				end
 
 				local flags = bit32.bor(
@@ -568,7 +492,7 @@ function ui.render(state)
 					if sortSpecs and sortSpecs.SpecsDirty then
 						local spec = sortSpecs:Specs(1)
 						if spec then
-							table.sort(state.priceHistory, function(a, b)
+							state:sortPriceHistory(function(a, b)
 								local valA, valB
 
 								if spec.ColumnIndex == 0 then
@@ -618,7 +542,6 @@ function ui.render(state)
 							end)
 						end
 						sortSpecs.SpecsDirty = false
-						state.saveRequested = true
 					end
 
 					for index, entry in ipairs(state.priceHistory) do
@@ -632,7 +555,7 @@ function ui.render(state)
 						ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.8, 0.2, 0.2, 1.0)
 						ImGui.PushStyleColor(ImGuiCol.ButtonActive, 1.0, 0.3, 0.3, 1.0)
 						if ImGui.Button("X##rem_" .. entry.id, 18, 18) then
-							state.itemToRemove = entry
+							state:setItemToRemove(entry)
 						end
 						ImGui.PopStyleColor(3)
 
@@ -680,9 +603,8 @@ function ui.render(state)
 							if val < 0 then
 								val = 0
 							end
-							entry.listedPrice = val
 							if changed then
-								state.saveRequested = true
+								state:updateListedPrice(entry, val)
 							end
 							ImGui.PopItemWidth()
 						else
@@ -737,30 +659,7 @@ function ui.render(state)
 						end
 					end
 
-					if state.itemToRemove then
-						local foundIdx = nil
-						for i, hEntry in ipairs(state.priceHistory) do
-							if hEntry == state.itemToRemove then
-								foundIdx = i
-								break
-							end
-						end
-						if foundIdx then
-							local entry = state.priceHistory[foundIdx]
-							if state.activeDetailEntry == entry then
-								state.activeDetailEntry = nil
-							end
-							for sqIdx, sqEntry in ipairs(state.searchQueue) do
-								if sqEntry == entry then
-									table.remove(state.searchQueue, sqIdx)
-									break
-								end
-							end
-							table.remove(state.priceHistory, foundIdx)
-							state.saveRequested = true
-						end
-						state.itemToRemove = nil
-					end
+					state:removePendingItem()
 
 					ImGui.EndTable()
 				end
@@ -774,14 +673,10 @@ function ui.render(state)
 				ImGui.Spacing()
 
 				-- Add inline configuration for reply message
-				ImGui.AlignTextToFramePadding()
-				ImGui.Text("Quick Reply Msg:")
-				ImGui.SameLine()
 				ImGui.PushItemWidth(-1)
 				local valReply, changedReply = ImGui.InputText("##quick_reply_msg", state.config.replyMessage or "Sure, near Parcel")
-				state.config.replyMessage = valReply
 				if changedReply then
-					state.configSaveRequested = true
+					state:updateConfigKey("replyMessage", valReply)
 				end
 				ImGui.PopItemWidth()
 
@@ -841,7 +736,7 @@ function ui.render(state)
 						ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.7, 0.2, 1.0)
 						ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.3, 0.9, 0.3, 1.0)
 						if ImGui.Button("V##done_" .. index, 30, 18) then
-							state.tellToRemove = tell
+							state:setTellToRemove(tell)
 						end
 						ImGui.PopStyleColor(3)
 
@@ -854,15 +749,7 @@ function ui.render(state)
 						end
 					end
 
-					if state.tellToRemove then
-						for i, t in ipairs(state.receivedTells) do
-							if t == state.tellToRemove then
-								table.remove(state.receivedTells, i)
-								break
-							end
-						end
-						state.tellToRemove = nil
-					end
+					state:removePendingTell()
 
 					ImGui.EndTable()
 				end
@@ -890,9 +777,8 @@ function ui.render(state)
 				if valLimit < 0 then
 					valLimit = 0
 				end
-				state.config.lowSampleSize = valLimit
 				if changedLimit then
-					state.configSaveRequested = true
+					state:updateConfigKey("lowSampleSize", valLimit)
 				end
 				ImGui.PopItemWidth()
 
@@ -907,9 +793,8 @@ function ui.render(state)
 				if valMin < 0 then
 					valMin = 0
 				end
-				state.config.debounceMin = valMin
 				if changedMin then
-					state.configSaveRequested = true
+					state:updateConfigKey("debounceMin", valMin)
 				end
 				ImGui.PopItemWidth()
 
@@ -922,9 +807,8 @@ function ui.render(state)
 				if valMax < 0 then
 					valMax = 0
 				end
-				state.config.debounceMax = valMax
 				if changedMax then
-					state.configSaveRequested = true
+					state:updateConfigKey("debounceMax", valMax)
 				end
 				ImGui.PopItemWidth()
 
@@ -932,11 +816,8 @@ function ui.render(state)
 				ImGui.Text("Default Reply Message:")
 				ImGui.PushItemWidth(-1)
 				local valReply, changedReply = ImGui.InputText("##default_reply_msg", state.config.replyMessage or "Sure, near Parcel")
-				if valReply ~= "" then
-					state.config.replyMessage = valReply
-				end
-				if changedReply then
-					state.configSaveRequested = true
+				if changedReply and valReply ~= "" then
+					state:updateConfigKey("replyMessage", valReply)
 				end
 				ImGui.PopItemWidth()
 
@@ -945,8 +826,7 @@ function ui.render(state)
 				ImGui.PushItemWidth(-1)
 				local valBroadcastInterval, changedBroadcastInterval = ImGui.SliderInt("##broadcast_interval", state.config.broadcastInterval or 120, 120, 1200, "%d seconds")
 				if changedBroadcastInterval then
-					state.config.broadcastInterval = valBroadcastInterval
-					state.configSaveRequested = true
+					state:updateConfigKey("broadcastInterval", valBroadcastInterval)
 				end
 				ImGui.PopItemWidth()
 

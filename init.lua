@@ -11,6 +11,7 @@ math.randomseed(os.time())
 
 local ui = require("pricecheck.modules.ui")
 local http = require("pricecheck.modules.http")
+local stateManager = require("pricecheck.modules.state")
 
 local storage = require("pricecheck.modules.storage")
 local char = require("pricecheck.modules.char")
@@ -82,22 +83,7 @@ for _, item in ipairs(initItems) do
 end
 
 -- Shared state context table (encapsulating all state without using globals)
-state = {
-	openGUI = true,
-	isSearching = false,
-	broadcastCommand = "/auction",
-	priceHistory = loadedHistory,
-	config = loadedConfig,
-	receivedTells = {},
-	activeDetailEntry = nil,
-	searchQueue = {},
-	broadcastQueue = {},
-	bulkPriceHistory = initialBulkHistory,
-	bulkLastUpdated = nil,
-	bulkKronoRate = nil,
-	bulkQueue = {},
-	isBulkSearching = false,
-}
+state = stateManager.new(loadedHistory, loadedConfig, initialBulkHistory)
 
 -- Write back the config on boot
 
@@ -124,42 +110,25 @@ while state.openGUI do
 	if state.isBroadcastingToggled then
 		local now = os.time()
 		if not state.nextToggleBroadcastTime then
-			state.nextToggleBroadcastTime = now + (state.config.broadcastInterval or 120)
+			state:setNextToggleBroadcastTime(now + (state.config.broadcastInterval or 120))
 		end
 		if now >= state.nextToggleBroadcastTime then
 			local realAuctionLines = ui.getAuctionLines(state, true)
-			for _, commandLine in ipairs(realAuctionLines) do
-				table.insert(state.broadcastQueue, commandLine)
-			end
-			state.nextToggleBroadcastTime = now + (state.config.broadcastInterval or 120)
+			state:enqueueBroadcast(realAuctionLines)
+			state:setNextToggleBroadcastTime(now + (state.config.broadcastInterval or 120))
 		end
 	else
-		state.nextToggleBroadcastTime = nil
+		state:setNextToggleBroadcastTime(nil)
 	end
 
-	-- Non-blocking startup history filtering step (processes one entry from static queue per loop iteration)
 	if needHistoryFilter then
 		if filterIndex <= #itemsToFilter then
 			local filterEntry = itemsToFilter[filterIndex]
 			local count, bankCount = char.getItemCounts(filterEntry.item)
 			if count + bankCount == 0 then
-				-- Find and remove by unique ID to be immune to UI mutation index shifting
-				for idx = 1, #state.priceHistory do
-					if state.priceHistory[idx].id == filterEntry.id then
-						table.remove(state.priceHistory, idx)
-						break
-					end
-				end
+				state:removeHistoryEntryById(filterEntry.id)
 			else
-				-- Safe status validation
-				for idx = 1, #state.priceHistory do
-					if state.priceHistory[idx].id == filterEntry.id then
-						if state.priceHistory[idx].status == "Searching..." then
-							state.priceHistory[idx].status = "Failed"
-						end
-						break
-					end
-				end
+				state:failHistorySearchIfSearching(filterEntry.id)
 			end
 			filterIndex = filterIndex + 1
 		else
@@ -168,85 +137,19 @@ while state.openGUI do
 		end
 	end
 	if #state.searchQueue > 0 and not state.isSearching then
-		local entry = table.remove(state.searchQueue, 1)
-		state.isSearching = true
+		local entry = state:popSearchQueue()
+		state:setSearching(true)
 		http.performSearch(entry.item, function(success, data, statusText)
-			state.isSearching = false
-			entry.status = statusText
-			if success and data then
-				entry.data = data
-				local avgSell = data.sellAverage or data.buyAverage or 0
-				local listedPrice = 0
-				if avgSell <= 100 then
-					listedPrice = math.ceil(avgSell / 10) * 10
-				elseif avgSell <= 1000 then
-					listedPrice = math.ceil(avgSell / 50) * 50
-				else
-					listedPrice = math.ceil(avgSell / 100) * 100
-				end
-				entry.listedPrice = listedPrice
-			end
-
-			saveHistory()
+			state:setSearching(false)
+			state:updateSearchFinished(entry, success, data, statusText)
 		end)
 		mq.delay(100)
 	elseif #state.bulkQueue > 0 then
 		local ids = state.bulkQueue
-		state.bulkQueue = {}
-		state.isBulkSearching = true
+		state:setBulkQueue({})
+		state:setBulkSearching(true)
 		http.performBulkSearch(ids, function(result, success, errMsg)
-			if success and result then
-				state.bulkLastUpdated = result.lastUpdated
-				state.bulkKronoRate = result.kronoRate
-				if result.items then
-					for _, resItem in ipairs(result.items) do
-						local found = false
-						for _, existing in ipairs(state.bulkPriceHistory) do
-							if existing.itemId == resItem.itemId then
-								existing.medianPlatPrice = resItem.medianPlatPrice
-								existing.hasData = resItem.hasData
-								existing.sampleSize = resItem.sampleSize
-								existing.status = "Success"
-								found = true
-								break
-							end
-						end
-						if not found then
-							table.insert(state.bulkPriceHistory, dto.newBulkEntry(
-								resItem.itemId,
-								resItem.item or "Unknown Item",
-								"Success",
-								resItem.medianPlatPrice,
-								resItem.hasData,
-								resItem.sampleSize
-							))
-						end
-
-
-					end
-				end
-				-- Update status for any items that were in this batch but had no data returned
-				for _, itemId in ipairs(ids) do
-					for _, existing in ipairs(state.bulkPriceHistory) do
-						if existing.itemId == itemId and existing.status == "Searching..." then
-							existing.status = "Success"
-							existing.hasData = false
-						end
-					end
-
-				end
-			else
-				-- Set error status for all items in the batch if request failed
-				for _, itemId in ipairs(ids) do
-					for _, existing in ipairs(state.bulkPriceHistory) do
-						if existing.itemId == itemId and existing.status == "Searching..." then
-							existing.status = errMsg or "Error"
-						end
-					end
-
-				end
-			end
-			state.isBulkSearching = false
+			state:updateBulkSearchResults(ids, result, success, errMsg, dto)
 		end)
 		mq.delay(100)
 	elseif chat.processBroadcastQueue(state) then
@@ -258,11 +161,11 @@ while state.openGUI do
 	-- Check for save requests
 	if state.saveRequested then
 		saveHistory()
-		state.saveRequested = false
+		state:clearSaveRequest()
 	end
 	if state.configSaveRequested then
 		saveConfig()
-		state.configSaveRequested = false
+		state:clearConfigSaveRequest()
 	end
 end
 

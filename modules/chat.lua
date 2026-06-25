@@ -24,7 +24,7 @@ function chat.registerTellEvent(state)
 				message = message:sub(1, -2)
 			end
 
-			table.insert(state.receivedTells, dto.newTellEntry(sender, message))
+			state:addReceivedTell(sender, message, dto)
 		end
 	end)
 end
@@ -39,7 +39,7 @@ function chat.processBroadcastQueue(state)
 	end
 
 	if #state.broadcastQueue > 0 then
-		local commandLine = table.remove(state.broadcastQueue, 1)
+		local commandLine = state:popBroadcastQueue()
 		mq.cmd(commandLine)
 		local min = (state.config and state.config.debounceMin) or 400
 		local max = (state.config and state.config.debounceMax) or 600
