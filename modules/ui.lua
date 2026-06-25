@@ -184,11 +184,11 @@ function ui.render(state)
 		local cursorItemName = char.getCursorItemName()
 
 		-- Check if required plugins are loaded
-		local linkdbLoaded = mq.TLO.Plugin("mq2linkdb").IsLoaded() or mq.TLO.Plugin("linkdb").IsLoaded()
-		local itemdbLoaded = mq.TLO.Plugin("mq2itemdb").IsLoaded() or mq.TLO.Plugin("itemdb").IsLoaded()
+		local linkdbLoaded = mq.TLO.Plugin("MQ2LinkDB").IsLoaded() or mq.TLO.Plugin("mq2linkdb").IsLoaded() or mq.TLO.Plugin("linkdb").IsLoaded()
+		local itemdbLoaded = mq.TLO.Plugin("MQ2ItemDB").IsLoaded() or mq.TLO.Plugin("mq2itemdb").IsLoaded() or mq.TLO.Plugin("itemdb").IsLoaded()
 
 		-- Check if autoloot/lootly are loaded/running
-		local isAutoLootLoaded = mq.TLO.Plugin("mq2autoloot").IsLoaded() or mq.TLO.Plugin("autoloot").IsLoaded()
+		local isAutoLootLoaded = mq.TLO.Plugin("MQ2AutoLoot").IsLoaded() or mq.TLO.Plugin("mq2autoloot").IsLoaded() or mq.TLO.Plugin("autoloot").IsLoaded()
 		local isLootlyRunning = false
 		local lootlyScript = mq.TLO.Lua.Script("lootly")
 		if lootlyScript and lootlyScript() ~= nil then
@@ -206,17 +206,17 @@ function ui.render(state)
 			if ImGui.BeginChild("PluginWarning", -1, bannerHeight, true) then
 				ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "Missing Required Plugin(s):")
 				if not linkdbLoaded then
-					ImGui.BulletText("mq2linkdb (used for item database links)")
+					ImGui.BulletText("MQ2LinkDB (used for item database links)")
 					ImGui.SameLine(320)
-					if ImGui.Button("Load mq2linkdb##load_linkdb", 120, 18) then
-						chat.executeCommand("/plugin mq2linkdb")
+					if ImGui.Button("Load MQ2LinkDB##load_linkdb", 120, 18) then
+						chat.executeCommand("/plugin MQ2LinkDB")
 					end
 				end
 				if not itemdbLoaded then
-					ImGui.BulletText("mq2itemdb (used for item information)")
+					ImGui.BulletText("MQ2ItemDB (used for item information)")
 					ImGui.SameLine(320)
-					if ImGui.Button("Load mq2itemdb##load_itemdb", 120, 18) then
-						chat.executeCommand("/plugin mq2itemdb")
+					if ImGui.Button("Load MQ2ItemDB##load_itemdb", 120, 18) then
+						chat.executeCommand("/plugin MQ2ItemDB")
 					end
 				end
 			end
