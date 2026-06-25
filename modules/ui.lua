@@ -187,18 +187,15 @@ function ui.render(state)
 		ImGui.Text("Item Drop Slot:")
 		if cursorItemName then
 			local canSearch = true
-			for _, entry in ipairs(state.priceHistory) do
-				if entry.item:lower() == cursorItemName:lower() and entry.status == "Searching..." then
-					canSearch = false
-					break
-				end
+			if state.cursorQueryResult and state.cursorQueryResult.item:lower() == cursorItemName:lower() and state.cursorQueryResult.status == "Searching..." then
+				canSearch = false
 			end
 			if not canSearch then
 				ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
 			end
 			ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.6, 0.2, 1.0)
 			if ImGui.Button(string.format("Click to Check: %s", cursorItemName), -1, 40) and canSearch then
-				queueSearch(state, cursorItemName)
+				state:requestCursorQuery(cursorItemName)
 			end
 			ImGui.PopStyleColor()
 			if not canSearch then
@@ -873,6 +870,119 @@ function ui.render(state)
 			end
 
 			ImGui.EndTabBar()
+		end
+	end
+	ImGui.End()
+
+	renderCursorQueryWindow(state)
+end
+
+-- Helper function to render a standalone window for the queried cursor item details
+function renderCursorQueryWindow(state)
+	if not state.showCursorQueryWindow or not state.cursorQueryResult then
+		return
+	end
+
+	ImGui.SetNextWindowSize(380, 420, ImGuiCond.FirstUseEver)
+	local open, shouldDraw = ImGui.Begin("Price Details: " .. state.cursorQueryResult.item, state.showCursorQueryWindow)
+	if state.showCursorQueryWindow ~= open then
+		state:setShowCursorQueryWindow(open)
+	end
+
+	if shouldDraw then
+		local result = state.cursorQueryResult
+		ImGui.TextColored(0.4, 0.8, 1.0, 1.0, "Item: " .. result.item)
+		ImGui.Separator()
+
+		if result.status == "Searching..." then
+			ImGui.TextColored(1.0, 0.8, 0.2, 1.0, "Searching for pricing data...")
+		elseif result.status == "Success" and result.data then
+			local data = result.data
+			ImGui.Text(string.format("Sellers Avg: %.1f pp (Samples: %d)", data.sellAverage or 0, data.sellSampleSize or 0))
+			ImGui.Text(string.format("Buyers Avg: %.1f pp (Samples: %d)", data.buyAverage or 0, data.buySampleSize or 0))
+			ImGui.Spacing()
+
+			local function drawDetailsTable(title, logArray)
+				ImGui.TextColored(0.4, 1.0, 0.4, 1.0, title)
+				if not logArray or #logArray == 0 then
+					ImGui.TextDisabled("   No recent transactions.")
+					return
+				end
+
+				local tFlags = bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.RowBg)
+				if ImGui.BeginTable(title .. "CursorTable", 4, tFlags, 0, 0) then
+					ImGui.TableSetupColumn("Trader", ImGuiTableColumnFlags.WidthStretch)
+					ImGui.TableSetupColumn("Plat", ImGuiTableColumnFlags.WidthFixed, 55)
+					ImGui.TableSetupColumn("Krono", ImGuiTableColumnFlags.WidthFixed, 45)
+					ImGui.TableSetupColumn("Age", ImGuiTableColumnFlags.WidthFixed, 70)
+					ImGui.TableHeadersRow()
+
+					local limit = math.min(#logArray, 5)
+					for i = 1, limit do
+						local log = logArray[i]
+						ImGui.TableNextRow()
+						ImGui.TableSetColumnIndex(0)
+						ImGui.Text(log.auctioneer or "Unknown")
+						ImGui.TableSetColumnIndex(1)
+						ImGui.Text(tostring(math.floor(log.platPrice or 0)))
+						ImGui.TableSetColumnIndex(2)
+						ImGui.Text(tostring(log.kronoPrice or 0))
+						ImGui.TableSetColumnIndex(3)
+						ImGui.TextColored(0.7, 0.7, 0.7, 1.0, util.getRelativeTimeString(log.datetime))
+					end
+					ImGui.EndTable()
+				end
+			end
+
+			drawDetailsTable("Recent Sell Offers (WTS)", data.recentSellSales)
+			ImGui.Spacing()
+			drawDetailsTable("Recent Buy Offers (WTB)", data.recentBuySales)
+			ImGui.Spacing()
+			ImGui.Separator()
+			ImGui.Spacing()
+
+			-- Check if already listed in Trade list
+			local isAlreadyListed = false
+			for _, hEntry in ipairs(state.priceHistory) do
+				if hEntry.item:lower() == result.item:lower() then
+					isAlreadyListed = true
+					break
+				end
+			end
+
+			if isAlreadyListed then
+				ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
+			end
+			if ImGui.Button(isAlreadyListed and "Already Listed in Trade" or "Add to Trade List", -1, 30) and not isAlreadyListed then
+				queueSearch(state, result.item)
+			end
+			if isAlreadyListed then
+				ImGui.PopStyleVar()
+			end
+
+		else
+			ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "Status: " .. tostring(result.status or "Error"))
+			ImGui.Spacing()
+
+			-- Allow adding even if search failed (with default price)
+			local isAlreadyListed = false
+			for _, hEntry in ipairs(state.priceHistory) do
+				if hEntry.item:lower() == result.item:lower() then
+					isAlreadyListed = true
+					break
+				end
+			end
+
+			if isAlreadyListed then
+				ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
+			end
+			if ImGui.Button(isAlreadyListed and "Already Listed in Trade" or "Add with Default Price", -1, 30) and not isAlreadyListed then
+				local defaultPrice = (state.config and state.config.defaultPlatPrice) or 1000
+				state:addHistoryEntryWithDefaultPrice(result.item, defaultPrice, dto)
+			end
+			if isAlreadyListed then
+				ImGui.PopStyleVar()
+			end
 		end
 	end
 	ImGui.End()

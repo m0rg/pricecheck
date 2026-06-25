@@ -24,6 +24,9 @@ function stateManager.new(loadedHistory, loadedConfig, initialBulkHistory)
 		configSaveRequested = false,
 		itemToRemove = nil,
 		tellToRemove = nil,
+		cursorQueryResult = nil,
+		showCursorQueryWindow = false,
+		cursorQueryPending = false,
 	}
 
 	local self = {
@@ -507,6 +510,32 @@ function stateManager:addHistoryEntryWithDefaultPrice(itemName, defaultPrice, dt
 		self:requestSave()
 		logger.log("\ar[PriceCheck State]\ax added new entry %q with default price %d", itemName, defaultPrice)
 	end
+end
+
+function stateManager:setCursorQueryResult(result)
+	local oldName = self._data.cursorQueryResult and self._data.cursorQueryResult.item or "nil"
+	local newName = result and result.item or "nil"
+	logger.log("\ar[PriceCheck State]\ax cursorQueryResult changed from %s to %s (Status: %s)", oldName, newName, tostring(result and result.status))
+	self._data.cursorQueryResult = result
+end
+
+function stateManager:setShowCursorQueryWindow(show)
+	if self._data.showCursorQueryWindow ~= show then
+		logger.log("\ar[PriceCheck State]\ax showCursorQueryWindow changed from %s to %s", tostring(self._data.showCursorQueryWindow), tostring(show))
+		self._data.showCursorQueryWindow = show
+	end
+end
+
+function stateManager:requestCursorQuery(itemName)
+	if not itemName or itemName == "" then return end
+	self._data.cursorQueryResult = { item = itemName, status = "Searching...", data = nil }
+	self._data.showCursorQueryWindow = true
+	self._data.cursorQueryPending = true
+	logger.log("\ar[PriceCheck State]\ax cursor query requested for %q", itemName)
+end
+
+function stateManager:clearCursorQueryPending()
+	self._data.cursorQueryPending = false
 end
 
 return stateManager

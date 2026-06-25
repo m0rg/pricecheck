@@ -110,6 +110,15 @@ while state.openGUI do
 	mq.doevents()
 	http.tick()
 
+	-- Handle cursor query requests (non-blocking, independent of the trade searchQueue)
+	if state.cursorQueryPending then
+		local itemName = state.cursorQueryResult.item
+		state:clearCursorQueryPending()
+		http.performSearch(itemName, function(success, data, statusText)
+			state:setCursorQueryResult({ item = itemName, status = statusText, data = data })
+		end)
+	end
+
 	-- Handle toggled interval broadcasting
 	if state.isBroadcastingToggled then
 		local now = os.time()
