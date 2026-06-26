@@ -155,17 +155,18 @@ local function renderDetailsTooltip(entry)
 	if not entry or not entry.data then return end
 	local data = entry.data
 
-	ImGui.BeginTooltip()
-	ImGui.TextColored(0.4, 0.8, 1.0, 1.0, string.format("Market Details: %s", data.item or "Unknown"))
-	ImGui.Separator()
-	ImGui.Text(string.format("Sellers Avg: %.1f pp (Samples: %d)", data.sellAverage or 0, data.sellSampleSize or 0))
-	ImGui.Text(string.format("Buyers Avg: %.1f pp (Samples: %d)", data.buyAverage or 0, data.buySampleSize or 0))
-	ImGui.Spacing()
+	if ImGui.BeginTooltip() then
+		ImGui.TextColored(0.4, 0.8, 1.0, 1.0, string.format("Market Details: %s", data.item or "Unknown"))
+		ImGui.Separator()
+		ImGui.Text(string.format("Sellers Avg: %.1f pp (Samples: %d)", data.sellAverage or 0, data.sellSampleSize or 0))
+		ImGui.Text(string.format("Buyers Avg: %.1f pp (Samples: %d)", data.buyAverage or 0, data.buySampleSize or 0))
+		ImGui.Spacing()
 
-	drawTransactionTable("TooltipTable", "Recent Sell Offers (WTS)", data.recentSellSales)
-	ImGui.Spacing()
-	drawTransactionTable("TooltipTable", "Recent Buy Offers (WTB)", data.recentBuySales)
-	ImGui.EndTooltip()
+		drawTransactionTable("TooltipTable", "Recent Sell Offers (WTS)", data.recentSellSales)
+		ImGui.Spacing()
+		drawTransactionTable("TooltipTable", "Recent Buy Offers (WTB)", data.recentBuySales)
+		ImGui.EndTooltip()
+	end
 end
 
 -- ImGui Render Loop
@@ -275,14 +276,15 @@ function ui.render(state)
 					state:addAllBulkItems(dto)
 				end
 				if ImGui.IsItemHovered() then
-					ImGui.BeginTooltip()
-					if hasBulkPerformed then
-						local estTime = itemsToSearchCount -- 1 second per item
-						ImGui.Text(string.format("Add all remaining items to the trade list.\nEstimated query time: %d seconds (%d items to search)", estTime, itemsToSearchCount))
-					else
-						ImGui.Text("Please perform a bulk price check first.")
+					if ImGui.BeginTooltip() then
+						if hasBulkPerformed then
+							local estTime = itemsToSearchCount -- 1 second per item
+							ImGui.Text(string.format("Add all remaining items to the trade list.\nEstimated query time: %d seconds (%d items to search)", estTime, itemsToSearchCount))
+						else
+							ImGui.Text("Please perform a bulk price check first.")
+						end
+						ImGui.EndTooltip()
 					end
-					ImGui.EndTooltip()
 				end
 				if not hasBulkPerformed then
 					ImGui.PopStyleVar()
@@ -352,9 +354,10 @@ function ui.render(state)
 						if isVendorBetter then
 							ImGui.TextColored(1.0, 0.8, 0.2, 1.0, entry.item) -- Highlight item name in gold
 							if ImGui.IsItemHovered() then
-								ImGui.BeginTooltip()
-								ImGui.Text("Vendor sell price is higher or equal to market median price!")
-								ImGui.EndTooltip()
+								if ImGui.BeginTooltip() then
+									ImGui.Text("Vendor sell price is higher or equal to market median price!")
+									ImGui.EndTooltip()
+								end
 							end
 						else
 							ImGui.Text(entry.item)
@@ -641,9 +644,10 @@ function ui.render(state)
 							if sellSamples <= limit then
 								ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "[!] ")
 								if ImGui.IsItemHovered() then
-									ImGui.BeginTooltip()
-									ImGui.Text(string.format("Small sample size: only %d sample(s) available", sellSamples))
-									ImGui.EndTooltip()
+									if ImGui.BeginTooltip() then
+										ImGui.Text(string.format("Small sample size: only %d sample(s) available", sellSamples))
+										ImGui.EndTooltip()
+									end
 								end
 								ImGui.SameLine()
 							end
@@ -651,9 +655,10 @@ function ui.render(state)
 						local displayName = (entry.data and entry.data.item) or entry.item
 						ImGui.TextColored(0.4, 0.8, 1.0, 1.0, displayName)
 						if ImGui.IsItemHovered() then
-							ImGui.BeginTooltip()
-							ImGui.Text("Left-click to view standalone price details\nRight-click to pick up item to cursor")
-							ImGui.EndTooltip()
+							if ImGui.BeginTooltip() then
+								ImGui.Text("Left-click to view standalone price details\nRight-click to pick up item to cursor")
+								ImGui.EndTooltip()
+							end
 						end
 						if ImGui.IsItemClicked(0) then
 							state:requestCursorQuery(entry.item)

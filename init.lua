@@ -4,24 +4,13 @@ local mq = require("mq")
 local REQUIRED_PLUGINS = {
 	{
 		name = "MQ2LinkDB",
-		alternatives = { "mq2linkdb", "linkdb" },
 	},
 }
 
 -- Reusable check function to ensure required plugins are loaded
 local function ensurePlugins()
 	for _, p in ipairs(REQUIRED_PLUGINS) do
-		local loaded = false
-		if mq.TLO.Plugin(p.name).IsLoaded() then
-			loaded = true
-		else
-			for _, alt in ipairs(p.alternatives or {}) do
-				if mq.TLO.Plugin(alt).IsLoaded() then
-					loaded = true
-					break
-				end
-			end
-		end
+		local loaded = mq.TLO.Plugin(p.name).IsLoaded()
 
 		if not loaded then
 			-- Attempt to load it
@@ -31,14 +20,6 @@ local function ensurePlugins()
 
 			-- Check again
 			loaded = mq.TLO.Plugin(p.name).IsLoaded()
-			if not loaded then
-				for _, alt in ipairs(p.alternatives or {}) do
-					if mq.TLO.Plugin(alt).IsLoaded() then
-						loaded = true
-						break
-					end
-				end
-			end
 		end
 
 		if not loaded then
@@ -63,7 +44,6 @@ local ui = require("pricecheck.modules.ui")
 local http = require("pricecheck.modules.http")
 local stateManager = require("pricecheck.modules.state")
 local logger = require("pricecheck.modules.log")
-
 local storage = require("pricecheck.modules.storage")
 local char = require("pricecheck.modules.char")
 local dto = require("pricecheck.modules.dto")

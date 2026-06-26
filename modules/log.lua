@@ -44,8 +44,8 @@ function log.log(fmt, ...)
 		message = "Formatting error: " .. tostring(fmt)
 	end
 
-	-- Use standard printf (global) instead of mq.printf
-	local printFunc = printf or function(f, ...) print(string.format(f, ...)) end
+	-- maybe file logging later, but for now just print to MQ console
+	local printFunc = printf
 	printFunc("[%s:%s] %s", filename, funcname, message)
 end
 
