@@ -446,15 +446,26 @@ function ui.render(state)
 					state:setBroadcastCommand(newBroadcastCmd)
 				end
 
-				ImGui.Text("Preview String(s) (Plain Text, Max 4 items per line):")
 				local previewLines = ui.getAuctionLines(state, false)
-				local previewText = table.concat(previewLines, "\n")
-				if previewText == "" then
-					previewText = "No items or no valid prices available."
+				local numSaleItems = 0
+				for _, entry in ipairs(state.priceHistory) do
+					if entry.status == "Success" then
+						numSaleItems = numSaleItems + 1
+					end
+				end
+
+				ImGui.Text("Broadcast Summary:")
+				local summaryText
+				if numSaleItems == 0 then
+					summaryText = "0 Items in your Sale List. No broadcasts will be sent."
+				else
+					local numMessages = math.ceil(numSaleItems / 4)
+					local minutesToSend = math.ceil(numMessages / 5)
+					summaryText = string.format("%d Items in your Sale List. A Maximum of 5 Messages (20 Items) will be sent per minute, so your broadcast Interval will be added to the %d Minutes it takes to send your items.", numSaleItems, minutesToSend)
 				end
 
 				ImGui.PushStyleColor(ImGuiCol.FrameBg, 0.15, 0.15, 0.15, 1.0)
-				ImGui.InputTextMultiline("##salesString", previewText, -1, 60, ImGuiInputTextFlags.ReadOnly)
+				ImGui.InputTextMultiline("##salesSummary", summaryText, -1, 60, ImGuiInputTextFlags.ReadOnly)
 				ImGui.PopStyleColor()
 
 				local hasItemsToBroadcast = (#previewLines > 0)
@@ -470,8 +481,7 @@ function ui.render(state)
 
 				local buttonLabel
 				if isToggled then
-					local remaining = math.max(0, (state.nextToggleBroadcastTime or os.time()) - os.time())
-					buttonLabel = string.format("Stop Broadcast (%ds)", remaining)
+					buttonLabel = "Stop Broadcast"
 					ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.15, 0.15, 1.0)
 					ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.8, 0.25, 0.25, 1.0)
 					ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.5, 0.1, 0.1, 1.0)
@@ -487,7 +497,6 @@ function ui.render(state)
 						state:setBroadcastingToggled(true)
 						local realAuctionLines = ui.getAuctionLines(state, true)
 						state:enqueueBroadcast(realAuctionLines)
-						state:setNextToggleBroadcastTime(os.time() + (state.config.broadcastInterval or 120))
 					end
 				end
 
@@ -504,6 +513,22 @@ function ui.render(state)
 				if ImGui.Button("Recheck Qty", buttonWidth, 30) then
 					state:recheckQty(char.getItemCounts)
 				end
+
+				-- Status Line indicating broadcast progress
+				ImGui.Spacing()
+				if isToggled then
+					if #state.broadcastQueue > 0 then
+						ImGui.TextColored(0.4, 0.9, 0.4, 1.0, string.format("Status: Sending items (%d messages remaining)...", #state.broadcastQueue))
+					elseif state.nextToggleBroadcastTime then
+						local remaining = math.max(0, state.nextToggleBroadcastTime - os.time())
+						ImGui.TextColored(1.0, 0.8, 0.2, 1.0, string.format("Status: Waiting for next broadcast interval (%ds remaining)...", remaining))
+					else
+						ImGui.TextColored(0.7, 0.7, 0.7, 1.0, "Status: Preparing next broadcast...")
+					end
+				else
+					ImGui.TextColored(0.7, 0.7, 0.7, 1.0, "Status: Idle")
+				end
+				ImGui.Spacing()
 
 				ImGui.Separator()
 
@@ -844,35 +869,7 @@ function ui.render(state)
 				end
 				ImGui.PopItemWidth()
 
-				ImGui.Spacing()
-				ImGui.Text("Broadcast Debounce Delays (milliseconds):")
-				
-				ImGui.AlignTextToFramePadding()
-				ImGui.Text("Min Delay:")
-				ImGui.SameLine()
-				ImGui.PushItemWidth(100)
-				local valMin, changedMin = ImGui.InputInt("##debounce_min", state.config.debounceMin or 400, 10, 100)
-				if valMin < 0 then
-					valMin = 0
-				end
-				if changedMin then
-					state:updateConfigKey("debounceMin", valMin)
-				end
-				ImGui.PopItemWidth()
 
-				ImGui.SameLine(180)
-				ImGui.AlignTextToFramePadding()
-				ImGui.Text("Max Delay:")
-				ImGui.SameLine()
-				ImGui.PushItemWidth(100)
-				local valMax, changedMax = ImGui.InputInt("##debounce_max", state.config.debounceMax or 600, 10, 100)
-				if valMax < 0 then
-					valMax = 0
-				end
-				if changedMax then
-					state:updateConfigKey("debounceMax", valMax)
-				end
-				ImGui.PopItemWidth()
 
 				ImGui.Spacing()
 				ImGui.Text("Default Reply Message:")

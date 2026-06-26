@@ -179,13 +179,24 @@ while state.openGUI do
 	-- Handle toggled interval broadcasting
 	if state.isBroadcastingToggled then
 		local now = os.time()
-		if not state.nextToggleBroadcastTime then
-			state:setNextToggleBroadcastTime(now + (state.config.broadcastInterval or 120))
-		end
-		if now >= state.nextToggleBroadcastTime then
-			local realAuctionLines = ui.getAuctionLines(state, true)
-			state:enqueueBroadcast(realAuctionLines)
-			state:setNextToggleBroadcastTime(now + (state.config.broadcastInterval or 120))
+		if #state.broadcastQueue > 0 then
+			-- We are currently sending the items. Clear nextToggleBroadcastTime so the timer doesn't start until we are finished.
+			if state.nextToggleBroadcastTime then
+				state:setNextToggleBroadcastTime(nil)
+			end
+		else
+			-- Queue is empty! We are not sending.
+			if not state.nextToggleBroadcastTime then
+				-- We just completed a posting or just toggled it on. Start the interval timer now!
+				state:setNextToggleBroadcastTime(now + (state.config.broadcastInterval or 120))
+			else
+				-- Timer is running. Check if it has expired.
+				if now >= state.nextToggleBroadcastTime then
+					local realAuctionLines = ui.getAuctionLines(state, true)
+					state:enqueueBroadcast(realAuctionLines)
+					state:setNextToggleBroadcastTime(nil) -- Reset to nil so that the timer starts after this posting finishes
+				end
+			end
 		end
 	else
 		state:setNextToggleBroadcastTime(nil)
