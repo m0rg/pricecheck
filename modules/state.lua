@@ -1,5 +1,5 @@
 local mq = require("mq")
-local logger = require("pricecheck.modules.log")
+local logger = require("modules.log")
 
 local stateManager = {}
 

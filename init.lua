@@ -15,7 +15,7 @@ local function ensurePlugins()
 		if not loaded then
 			-- Attempt to load it
 			printf("\ar[PriceCheck] Required plugin %s is not loaded. Attempting to load...\ax", p.name)
-			mq.cmd(string.format("/plugin %s", p.name))
+			mq.cmdf("/plugin %s", p.name)
 			mq.delay(500) -- brief pause to let it load
 
 			-- Check again
@@ -40,15 +40,15 @@ end
 
 math.randomseed(os.time())
 
-local ui = require("pricecheck.modules.ui")
-local http = require("pricecheck.modules.http")
-local stateManager = require("pricecheck.modules.state")
-local logger = require("pricecheck.modules.log")
-local storage = require("pricecheck.modules.storage")
-local char = require("pricecheck.modules.char")
-local dto = require("pricecheck.modules.dto")
-local chat = require("pricecheck.modules.chat")
-local util = require("pricecheck.modules.util")
+local ui = require("modules.ui")
+local http = require("modules.http")
+local stateManager = require("modules.state")
+local logger = require("modules.log")
+local storage = require("modules.storage")
+local char = require("modules.char")
+local dto = require("modules.dto")
+local chat = require("modules.chat")
+local util = require("modules.util")
 
 -- Initialize modules with dependencies (SRP / DI)
 ui.setup(char, dto, chat, util)

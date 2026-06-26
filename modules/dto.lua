@@ -1,4 +1,4 @@
-local logger = require("pricecheck.modules.log")
+local logger = require("modules.log")
 
 local dto = {}
 

@@ -54,7 +54,7 @@ function chat.processBroadcastQueue(state)
 
 	if #state.broadcastQueue > 0 then
 		local commandLine = state:popBroadcastQueue()
-		mq.cmd(commandLine)
+		mq.cmdf(commandLine)
 		
 		-- Record this send time
 		table.insert(recentMessageTimes, currentClock)
@@ -69,7 +69,7 @@ end
 -- Executes an arbitrary MacroQuest command immediately
 function chat.executeCommand(commandLine)
 	if commandLine and commandLine ~= "" then
-		mq.cmd(commandLine)
+		mq.cmdf(commandLine)
 	end
 end
 
