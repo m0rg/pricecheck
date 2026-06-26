@@ -34,19 +34,19 @@ local recentMessageTimes = {}
 
 -- Processes the broadcast command queue with hardcoded delay and rate-limiting (non-blocking)
 function chat.processBroadcastQueue(state)
-	local currentClock = os.clock()
+	local currentClock = mq.gettime()
 	if currentClock < nextBroadcastTime then
 		return false
 	end
 
-	-- Clean up timestamps older than 60 seconds
-	while #recentMessageTimes > 0 and (currentClock - recentMessageTimes[1] > 60) do
+	-- Clean up timestamps older than 60,000 milliseconds (60 seconds)
+	while #recentMessageTimes > 0 and (currentClock - recentMessageTimes[1] > 60000) do
 		table.remove(recentMessageTimes, 1)
 	end
 
 	-- Limit the messages to a maximum of 5 per minute
 	if #recentMessageTimes >= 5 then
-		local nextAllowedTime = recentMessageTimes[1] + 60
+		local nextAllowedTime = recentMessageTimes[1] + 60000
 		if currentClock < nextAllowedTime then
 			return false
 		end
@@ -60,7 +60,7 @@ function chat.processBroadcastQueue(state)
 		table.insert(recentMessageTimes, currentClock)
 		
 		-- Hardcoded limit of 1000ms (1 second) between consecutive messages
-		nextBroadcastTime = currentClock + 1.0
+		nextBroadcastTime = currentClock + 1000
 		return true
 	end
 	return false
