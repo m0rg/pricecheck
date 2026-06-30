@@ -14,18 +14,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: "${{ github.ref }}"
-          fetch-depth: 0
-
 
       - name: Build zip file
-        run: git archive --format=zip -o "${{ github.event.repository.name }}_${{ github.ref_name }}.zip" HEAD
-
-      - name: Create message from git log
-        env:
-          VERSION: "${{ github.ref_name }}"
-        run: |
-          PREV=$(git describe --tags --abbrev=0 "${VERSION}^" 2>/dev/null || echo "")
-          git log --no-merges --pretty=format:"- %s ([%h](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/%H))" ${PREV:+$PREV..}${VERSION} > rg_release_notes.md
+        run: git archive --format=zip --prefix="${{ github.event.repository.name }}/" -o "${{ github.event.repository.name }}_${{ github.ref_name }}.zip" HEAD
 
       - name: Publish to RedGuides
         uses: RedGuides/redguides-publish@v1
@@ -35,5 +26,6 @@ jobs:
           resource_id: "3332"
           version: "${{ github.ref_name }}"
           file: "${{ github.event.repository.name }}_${{ github.ref_name }}.zip"
-          message: "rg_release_notes.md"
+          description: "README.MD"
+          message: "CHANGELOG.md"
           domain: "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.event.repository.default_branch }}/"

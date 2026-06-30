@@ -17,24 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Release Automation**: Integrated custom GitHub Actions workflow (`redguides-publish.yml`) to automatically zip repository files and publish release tags to RedGuides.
 
 ### Changed
-- **Modular Codebase Restructuring**: Extracted large single files into highly cohesive sub-modules under `modules/` (including `char.lua`, `chat.lua`, `dto.lua`, `http.lua`, `log.lua`, `state.lua`, `storage.lua`, `theme.lua`, `ui.lua`, and `util.lua`) utilizing Dependency Injection.
-- **Asynchronous HTTP Fetching**: Restructured network query logic in `http.lua` to leverage non-blocking `lua-curl` multi-handles and background loop ticks.
-- **Tell Interest Matcher**: Enhanced customer tells logger to search incoming messages against active WTS lists, highlight matches, and calculate sum totals.
-- **Standardized Commands & Pathing**:
-  - Replaced all nested `mq.cmd(string.format(...))` calls with clean `mq.cmdf(...)`.
-  - Swapped package absolute requires to relative modules pathing.
-  - Timezone calculations are now computed dynamically instead of statically defined.
-- **Rounding Logic**: Rounded list prices based on average sell price (to the nearest 10 for prices $\le$ 100, nearest 50 for prices $\le$ 1000, and nearest 100 for prices > 1000).
+
 
 ### Fixed
-- **Client Hangs / Freeze**: Corrected an infinite loop in `multi:info_read` inside `http.lua` by breaking when the easy handle is `0` or invalid.
-- **Timing Cooldown Glitch**: Switched `processBroadcastQueue` logic to evaluate millisecond wall-clock checks (`mq.gettime()`) instead of raw CPU clock ticks.
-- **Concurrency Modifications**: Fixed race conditions during background history filtering by making evaluations non-blocking.
-- **Safe Tooltips**: Wrapped ImGui tooltips inside BeginTooltip/EndTooltip return value checks to prevent GUI stack crashes.
 
 ### Removed
-- **Legacy Compatibility Wrapper**: Removed obsolete `pricecheck.lua`.
-- **SetItem Features**: Completely purged obsolete `/setitem` logic and buttons.
 
 ---
 
