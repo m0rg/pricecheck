@@ -45,15 +45,24 @@ graph TD
     D --> E[Open main GUI window]
 ```
 
+---
+
 ### 2. Sizing Up Your Stock (Item Appraisal)
 You have three methods to price and add items to your list:
 * **The Cursor Drop Slot**: Pick up an item on your cursor. The top bar of the script changes from a placeholder warning to a clickable **Click to Check: [Item Name]** button. Click it to open the floating *Price Details* window.
-* **Slash Commands**: Run `/pricecheck` (for the item on your cursor) or `/pricecheck <Item Name>` (e.g., `/pricecheck Fire Beetle Eye`). This queries the API and pops open the details window.
+* **Slash Commands**: Run `/pricecheck` (for the item on your cursor) or `/pricecheck <Item Name>` (e.g., `/pricecheck Fire Beetle Eye`). This queries the API and opens the details window.
+
+![Item Appraisal Float Window](screenshots/item_appraisal.png)
+
 * **Bulk Inventory Scanning**: Navigate to the **Your Items** tab and click **BULK PRICE CHECK**. The script scans your worn bags (slots 23 to 34) for unique items, bundles them, and checks them in batches. 
   * If the lookup succeeds, a sortable table updates with quantities, bank counts, median market prices, and NPC merchant values.
   * **Vendor Profit Alert**: If an item's NPC merchant value exceeds or equals the player market median price, the item name glows **Gold** and displays a tooltip: *"Vendor sell price is higher or equal to market median price!"*. This tells you to sell it to an NPC instead of listing it to players.
   * Click the `+` button on any item to add it to your broadcast list. (If the item has no market history, the `+` button turns red, adding it using your configured fallback price).
   * Click **Add All** to add all checked items with active prices in one go (hover to see estimated query durations).
+
+![Bulk Inventory Scanner Tab](screenshots/bulk_scanner.png)
+
+---
 
 ### 3. Setting Up the Trade List (The "Trade" Tab)
 * Once items are added, they populate the **History / Price History** table on the **Trade** tab.
@@ -63,6 +72,10 @@ You have three methods to price and add items to your list:
 * **Details Tooltip**: Hover over the **Hover** link in the Details column to see a pop-up transaction table of the 5 most recent WTS and WTB player sales, showing character names, plat values, Krono rates, and relative time ages (e.g., "5m ago").
 * **Grab Item to Cursor**: Right-click the name of any item in the history table. The script uses `/itemnotify` to automatically pick up the item and place it on your cursor, letting you grab it out of your bags instantly when completing a trade.
 
+![Trade List Configuration](screenshots/trade_list.png)
+
+---
+
 ### 4. Running the Sales Broadcast
 * Review the **Queue Preview** inside the **Timeline Checklist** scroll area on the Trade tab. It formats WTS lines, grouping up to 4 items on a single line to minimize chat footprint, incorporating colorized game links when broadcasting.
   * *Example line:* `/auction WTS 2x [Golden Fire Opal Ring] 100 pp, [Fire Beetle Eye] 10 pp`
@@ -70,6 +83,8 @@ You have three methods to price and add items to your list:
   * A green **Current Step Progress Bar** animates, tracking the countdown of active chat sends (1s pause) or anti-spam delays (60s pauses).
   * A grey **Total Cycle Progress Bar** displays the overall time percentage completed in the current cycle loop.
   * Adjust listing prices on the fly or click **Stop Broadcast** at any time to freeze the loop.
+
+![Broadcasting Queue Progress](screenshots/broadcast_progress.png)
 
 ```mermaid
 graph TD
@@ -85,6 +100,8 @@ graph TD
     H --> A
 ```
 
+---
+
 ### 5. Managing Transactions (The "Communication" Tab)
 * When a customer sends you a direct message, it bypasses your chat log spam and registers under the **Communication** tab.
 * **Interest Highlights**: The tell logger scans the message text. If the buyer mentions one of your listed items, a green alert message is printed:
@@ -93,11 +110,15 @@ graph TD
 * **Quick Replies**: Enter a response template in the input box (e.g., `"Sure, near Parcel"`). Click **Reply** next to the customer's name to instantly send them that tell.
 * **Clearing Completed Transactions**: Click the **V (Done)** button next to the customer's entry to remove them from the queue.
 
+![Customer Communications & Tells Logger](screenshots/communication_log.png)
+
 ---
 
 ## ⚙️ Configuration Dashboard
 
 Customize your trading flow under the **Configuration** tab:
+
+![Configuration & Color Presets](screenshots/configuration_presets.png)
 
 | Setting | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
