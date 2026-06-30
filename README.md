@@ -36,17 +36,6 @@ An in-game market checking, bulk inventory evaluation, and sales broadcasting as
 * The script checks for the required dependency `MQ2LinkDB`. If missing, it dynamically loads it via `/plugin MQ2LinkDB` to ensure color-coded item links can be generated.
 * The main GUI window **Frostreaver Trade Tools** opens, loading your previously saved configuration and trade list from storage.
 
-```mermaid
-graph TD
-    A[Start: /lua run pricecheck] --> B{MQ2LinkDB Plugin?}
-    B -- No --> C[Auto Load Plugin]
-    B -- Yes --> D[Load Config & History]
-    C --> D
-    D --> E[Open main GUI window]
-```
-
----
-
 ### 2. Sizing Up Your Stock (Item Appraisal)
 You have three methods to price and add items to your list:
 * **The Cursor Drop Slot**: Pick up an item on your cursor. The top bar of the script changes from a placeholder warning to a clickable **Click to Check: [Item Name]** button. Click it to open the floating *Price Details* window.
@@ -133,6 +122,12 @@ Customize your trading flow under the **Configuration** tab:
 ---
 
 ## 📦 Installation & Directory Setup
+
+0. Subscribe to the resource and not bother.
+
+
+OR: 
+
 
 1. Copy the `pricecheck` folder structure directly into your MacroQuest directory:
    ```text
