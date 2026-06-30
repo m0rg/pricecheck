@@ -175,7 +175,7 @@ local function renderCursorQueryWindow(state)
 	ImGui.SetNextWindowSize(380, 420, ImGuiCond.FirstUseEver)
 	local open, shouldDraw = ImGui.Begin("Price Details: " .. state.cursorQueryResult.item, state.showCursorQueryWindow)
 	if state.showCursorQueryWindow ~= open then
-		state:setShowCursorQueryWindow(open)
+		state.showCursorQueryWindow = open
 	end
 
 	if shouldDraw then

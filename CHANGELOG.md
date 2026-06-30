@@ -1,11 +1,15 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## [1.1.1] - 2026-07-01
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### Fixed
+- **Cursor query window crash**: Fixed a crash when closing the standalone cursor query window caused by calling a non-existent method `setShowCursorQueryWindow` on the state wrapper.
+- **Vulnerability/format string crash**: Fixed a potential crash in `mq.cmdf` when broadcasting item/player names containing `%` by passing them via `%s` format specifiers.
 
-## [Unreleased]
+### Refactored
+- **State manager setters**: Removed unused simple getters and setters (`setBulkQueue` and `setBulkPriceHistory`) and moved queue logging directly into the state metatable `__newindex` method.
+
+## [1.1.0] - 2026-06-30
 
 ### Added
 - **Visual Color Themes**: Introduced 6 UI styling presets ("Default", "Solarized Dark", "Nord", "Pastel", "Solarized Light", and "Windows 95").

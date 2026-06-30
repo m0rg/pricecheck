@@ -77,6 +77,8 @@ function stateManager.new(loadedHistory, loadedConfig, initialBulkHistory)
 					logger.log("\ar[PriceCheck State]\ax cursorQueryResult changed from %s to %s (Status: %s)", oldName, newName, tostring(value and value.status))
 				elseif key == "showCursorQueryWindow" then
 					logger.log("\ar[PriceCheck State]\ax showCursorQueryWindow changed from %s to %s", tostring(rawState.showCursorQueryWindow), tostring(value))
+				elseif key == "bulkQueue" then
+					logger.log("\ar[PriceCheck State]\ax bulkQueue set to %d IDs", (type(value) == "table") and #value or 0)
 				end
 			end
 			rawState[key] = value
@@ -92,14 +94,7 @@ function stateManager:clearBulkHistory()
 	self._data.bulkKronoRate = nil
 end
 
-function stateManager:setBulkQueue(ids)
-	logger.log("\ar[PriceCheck State]\ax bulkQueue set to %d IDs", #ids)
-	self._data.bulkQueue = ids
-end
 
-function stateManager:setBulkPriceHistory(history)
-	self._data.bulkPriceHistory = history
-end
 
 function stateManager:setBulkResults(kronoRate, lastUpdated)
 	logger.log("\ar[PriceCheck State]\ax bulk results received - Krono Rate: %s, Last Updated: %s", tostring(kronoRate), tostring(lastUpdated))
@@ -243,7 +238,7 @@ function stateManager:startBulkSearch(items)
 			status = "Searching...",
 		})
 	end
-	self._data.bulkQueue = ids
+	self.bulkQueue = ids
 	self.isBulkSearching = (#ids > 0)
 end
 

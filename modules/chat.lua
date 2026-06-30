@@ -88,7 +88,7 @@ function chat.processBroadcastQueue(state)
 
 	-- Execute current step
 	if step.type == "send" then
-		mq.cmdf(step.message)
+		mq.cmdf("%s", step.message)
 		state.stepEndTime = nowSec + 1
 		state.nextBroadcastTime = nowMs + 1000
 	elseif step.type == "pause" then
@@ -113,7 +113,7 @@ end
 
 function chat.executeCommand(commandLine)
 	if commandLine and commandLine ~= "" then
-		mq.cmdf(commandLine)
+		mq.cmdf("%s", commandLine)
 	end
 end
 
