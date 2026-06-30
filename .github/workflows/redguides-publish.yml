@@ -26,6 +26,6 @@ jobs:
           resource_id: "3332"
           version: "${{ github.ref_name }}"
           file: "${{ github.event.repository.name }}_${{ github.ref_name }}.zip"
-          description: "README.MD"
+          description: "README.md"
           message: "CHANGELOG.md"
           domain: "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.event.repository.default_branch }}/"
