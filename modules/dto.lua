@@ -2,7 +2,6 @@ local logger = require("modules.log")
 
 local dto = {}
 
--- History entry DTO with graceful fallbacks and logging
 function dto.newHistoryEntry(itemName, status, id, data, listedPrice)
 	if type(itemName) ~= "string" then
 		logger.log("Warning: newHistoryEntry received itemName of type %s, expected string. Coercing to string.", type(itemName))
@@ -13,11 +12,10 @@ function dto.newHistoryEntry(itemName, status, id, data, listedPrice)
 		item = itemName,
 		status = status or "Searching...",
 		data = data or nil,
-		listedPrice = listedPrice or 0
+		listedPrice = listedPrice or 0,
 	}
 end
 
--- Bulk inventory check item entry DTO with graceful fallbacks and logging
 function dto.newBulkEntry(itemId, itemName, status, medianPlatPrice, hasData, sampleSize)
 	if type(itemId) ~= "number" then
 		logger.log("Warning: newBulkEntry received itemId of type %s, expected number. Coercing to number.", type(itemId))
@@ -33,11 +31,10 @@ function dto.newBulkEntry(itemId, itemName, status, medianPlatPrice, hasData, sa
 		status = status or "Not Checked",
 		medianPlatPrice = medianPlatPrice or nil,
 		hasData = hasData or false,
-		sampleSize = sampleSize or 0
+		sampleSize = sampleSize or 0,
 	}
 end
 
--- Received tell entry DTO with graceful fallbacks and logging
 function dto.newTellEntry(sender, message, timestamp)
 	if type(sender) ~= "string" then
 		logger.log("Warning: newTellEntry received sender of type %s, expected string. Coercing to string.", type(sender))
@@ -50,7 +47,7 @@ function dto.newTellEntry(sender, message, timestamp)
 	return {
 		sender = sender,
 		message = message,
-		time = timestamp or os.time()
+		time = timestamp or os.time(),
 	}
 end
 

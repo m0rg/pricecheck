@@ -1,16 +1,22 @@
 local ImGui = require("ImGui")
 local mq = require("mq")
+local theme = require("modules.theme")
 
 local ui = {}
-
--- Pure formatting and calculation utilities delegated to util.lua
 
 local char
 local dto
 local chat
 local util
 
--- Injects character, data transfer, chat, and utility dependencies (SRP)
+local function textColored(color, text)
+	ImGui.TextColored(color[1], color[2], color[3], color[4], text)
+end
+
+local function pushStyleColor(col, color)
+	ImGui.PushStyleColor(col, color[1], color[2], color[3], color[4])
+end
+
 function ui.setup(charModule, dtoModule, chatModule, utilModule)
 	char = charModule
 	dto = dtoModule
@@ -18,11 +24,6 @@ function ui.setup(charModule, dtoModule, chatModule, utilModule)
 	util = utilModule
 end
 
-
-
--- Date relative helper delegated to util.lua
-
--- Helper function to extract price statistics from detailed lists
 local function getPriceStats(entry)
 	if not entry or not entry.data then
 		return nil, nil, nil
@@ -58,7 +59,6 @@ local function getPriceStats(entry)
 	return highestWTS, lowestWTS, highestWTB
 end
 
--- Helper function to generate an array of item string segments
 local function generateItemSegments(state, useLinks)
 	local segments = {}
 
@@ -90,7 +90,6 @@ local function generateItemSegments(state, useLinks)
 	return segments
 end
 
--- Function to package segments into lines capped at 4 items each
 function ui.getAuctionLines(state, useLinks)
 	local segments = generateItemSegments(state, useLinks)
 	if #segments == 0 then
@@ -99,7 +98,7 @@ function ui.getAuctionLines(state, useLinks)
 
 	local lines = {}
 	local currentLineItems = {}
-	local prefix = (state.broadcastCommand ~= "") and state.broadcastCommand or "/auction"
+	local prefix = (state.config.broadcastCommand and state.config.broadcastCommand ~= "") and state.config.broadcastCommand or "/auction"
 
 	for i, segment in ipairs(segments) do
 		table.insert(currentLineItems, segment)
@@ -112,14 +111,12 @@ function ui.getAuctionLines(state, useLinks)
 	return lines
 end
 
--- Helper function to queue a price check and immediately create or update the history placeholder
 local function queueSearch(state, itemName)
 	state:queueSearch(itemName, dto)
 end
 
--- Helper function to render recent WTS/WTB transactions in an ImGui table (shared between tooltip and cursor window)
 local function drawTransactionTable(tableNameSuffix, title, logArray)
-	ImGui.TextColored(0.4, 1.0, 0.4, 1.0, title)
+	textColored(theme.text.success, title)
 	if not logArray or #logArray == 0 then
 		ImGui.TextDisabled("   No recent transactions.")
 		return
@@ -144,19 +141,20 @@ local function drawTransactionTable(tableNameSuffix, title, logArray)
 			ImGui.TableSetColumnIndex(2)
 			ImGui.Text(tostring(log.kronoPrice or 0))
 			ImGui.TableSetColumnIndex(3)
-			ImGui.TextColored(0.7, 0.7, 0.7, 1.0, util.getRelativeTimeString(log.datetime))
+			textColored(theme.text.muted, util.getRelativeTimeString(log.datetime))
 		end
 		ImGui.EndTable()
 	end
 end
 
--- Helper function to render detailed log data inside an ImGui tooltip on hover
 local function renderDetailsTooltip(entry)
-	if not entry or not entry.data then return end
+	if not entry or not entry.data then
+		return
+	end
 	local data = entry.data
 
 	if ImGui.BeginTooltip() then
-		ImGui.TextColored(0.4, 0.8, 1.0, 1.0, string.format("Market Details: %s", data.item or "Unknown"))
+		textColored(theme.text.info, string.format("Market Details: %s", data.item or "Unknown"))
 		ImGui.Separator()
 		ImGui.Text(string.format("Sellers Avg: %.1f pp (Samples: %d)", data.sellAverage or 0, data.sellSampleSize or 0))
 		ImGui.Text(string.format("Buyers Avg: %.1f pp (Samples: %d)", data.buyAverage or 0, data.buySampleSize or 0))
@@ -169,26 +167,92 @@ local function renderDetailsTooltip(entry)
 	end
 end
 
--- ImGui Render Loop
+local function renderCursorQueryWindow(state)
+	if not state.showCursorQueryWindow or not state.cursorQueryResult then
+		return
+	end
+
+	ImGui.SetNextWindowSize(380, 420, ImGuiCond.FirstUseEver)
+	local open, shouldDraw = ImGui.Begin("Price Details: " .. state.cursorQueryResult.item, state.showCursorQueryWindow)
+	if state.showCursorQueryWindow ~= open then
+		state:setShowCursorQueryWindow(open)
+	end
+
+	if shouldDraw then
+		local result = state.cursorQueryResult
+
+		local isAlreadyListed = false
+		for _, hEntry in ipairs(state.priceHistory) do
+			if hEntry.item:lower() == result.item:lower() then
+				isAlreadyListed = true
+				break
+			end
+		end
+
+		textColored(theme.text.info, "Item: " .. result.item)
+		ImGui.Separator()
+
+		if result.status == "Searching..." then
+			textColored(theme.text.warning, "Searching for pricing data...")
+		elseif result.status == "Success" and result.data then
+			local data = result.data
+			ImGui.Text(string.format("Sellers Avg: %.1f pp (Samples: %d)", data.sellAverage or 0, data.sellSampleSize or 0))
+			ImGui.Text(string.format("Buyers Avg: %.1f pp (Samples: %d)", data.buyAverage or 0, data.buySampleSize or 0))
+			ImGui.Spacing()
+
+			drawTransactionTable("CursorTable", "Recent Sell Offers (WTS)", data.recentSellSales)
+			ImGui.Spacing()
+			drawTransactionTable("CursorTable", "Recent Buy Offers (WTB)", data.recentBuySales)
+			ImGui.Spacing()
+			ImGui.Separator()
+			ImGui.Spacing()
+
+			if isAlreadyListed then
+				ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
+			end
+			if ImGui.Button(isAlreadyListed and "Already Listed in Trade" or "Add to Trade List", -1, 30) and not isAlreadyListed then
+				queueSearch(state, result.item)
+			end
+			if isAlreadyListed then
+				ImGui.PopStyleVar()
+			end
+		else
+			textColored(theme.text.error, "Status: " .. tostring(result.status or "Error"))
+			ImGui.Spacing()
+
+			if isAlreadyListed then
+				ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
+			end
+			if ImGui.Button(isAlreadyListed and "Already Listed in Trade" or "Add with Default Price", -1, 30) and not isAlreadyListed then
+				local defaultPrice = (state.config and state.config.defaultPlatPrice) or 1000
+				state:addHistoryEntryWithDefaultPrice(result.item, defaultPrice, dto)
+			end
+			if isAlreadyListed then
+				ImGui.PopStyleVar()
+			end
+		end
+	end
+	ImGui.End()
+end
+
 function ui.render(state)
 	if not state.openGUI then
 		return
 	end
 
+	theme.apply(state)
+
 	ImGui.SetNextWindowSize(550, 520, ImGuiCond.FirstUseEver)
 
 	local open, shouldDraw = ImGui.Begin("Frostreaver Trade Tools", state.openGUI)
 	if state.openGUI ~= open then
-		state:setOpenGUI(open)
+		state.openGUI = open
 	end
+
 	if shouldDraw then
 		local cursorItemName = char.getCursorItemName()
 
-
-
-		-- ----------------------------------------------------
-		-- SECTION 1: Item Drop Slot
-		-- ----------------------------------------------------
+		ImGui.BeginDisabled(state.isBroadcastingToggled)
 		ImGui.Text("Item Drop Slot:")
 		if cursorItemName then
 			local canSearch = true
@@ -198,7 +262,7 @@ function ui.render(state)
 			if not canSearch then
 				ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
 			end
-			ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.6, 0.2, 1.0)
+			pushStyleColor(ImGuiCol.Button, theme.style.buttonCheck.bg)
 			if ImGui.Button(string.format("Click to Check: %s", cursorItemName), -1, 40) and canSearch then
 				state:requestCursorQuery(cursorItemName)
 			end
@@ -207,18 +271,17 @@ function ui.render(state)
 				ImGui.PopStyleVar()
 			end
 		else
-			ImGui.PushStyleColor(ImGuiCol.Button, 0.3, 0.3, 0.3, 0.5)
+			pushStyleColor(ImGuiCol.Button, theme.style.buttonCheckDisabled.bg)
 			ImGui.Button("Query Cursor Item\n(Hold an item on cursor to check price)", -1, 40)
 			ImGui.PopStyleColor()
 		end
+		ImGui.EndDisabled()
 
 		ImGui.Separator()
 
 		if ImGui.BeginTabBar("PriceCheckTabBar") then
 			if ImGui.BeginTabItem("Your Items") then
-				-- ----------------------------------------------------
-				-- SECTION 4: Bulk Price Check Table & Actions
-				-- ----------------------------------------------------
+				ImGui.BeginDisabled(state.isBroadcastingToggled)
 				local canBulkSearch = not state.isBulkSearching and (#state.bulkQueue == 0)
 				if not canBulkSearch then
 					ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
@@ -239,10 +302,10 @@ function ui.render(state)
 						if localTime then
 							readableTime = os.date("%Y-%m-%d %H:%M:%S", localTime) .. " (" .. util.getRelativeTimeString(state.bulkLastUpdated) .. ")"
 						end
-						ImGui.TextColored(0.4, 0.8, 1.0, 1.0, "Last Updated: " .. readableTime)
+						textColored(theme.text.info, "Last Updated: " .. readableTime)
 					end
 					if state.bulkKronoRate then
-						ImGui.TextColored(1.0, 0.8, 0.2, 1.0, "Current Krono Price: " .. util.formatNumber(state.bulkKronoRate) .. " pp")
+						textColored(theme.text.gold, "Current Krono Price: " .. util.formatNumber(state.bulkKronoRate) .. " pp")
 					end
 					ImGui.Spacing()
 				end
@@ -278,7 +341,7 @@ function ui.render(state)
 				if ImGui.IsItemHovered() then
 					if ImGui.BeginTooltip() then
 						if hasBulkPerformed then
-							local estTime = itemsToSearchCount -- 1 second per item
+							local estTime = itemsToSearchCount
 							ImGui.Text(string.format("Add all remaining items to the trade list.\nEstimated query time: %d seconds (%d items to search)", estTime, itemsToSearchCount))
 						else
 							ImGui.Text("Please perform a bulk price check first.")
@@ -298,8 +361,9 @@ function ui.render(state)
 					ImGuiTableFlags.Sortable
 				)
 
-				if ImGui.BeginTable("BulkHistoryTable", 4, flags, 0, 0) then
+				if ImGui.BeginTable("BulkHistoryTable", 5, flags, 0, 0) then
 					ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
+					ImGui.TableSetupColumn("Qty (Bank)", ImGuiTableColumnFlags.WidthFixed, 70)
 					ImGui.TableSetupColumn("Median Price", ImGuiTableColumnFlags.WidthFixed, 100)
 					ImGui.TableSetupColumn("Vendor Sell", ImGuiTableColumnFlags.WidthFixed, 100)
 					ImGui.TableSetupColumn("Add", bit32.bor(ImGuiTableColumnFlags.WidthFixed, ImGuiTableColumnFlags.NoSort), 45)
@@ -316,9 +380,14 @@ function ui.render(state)
 									valA = (a.item or ""):lower()
 									valB = (b.item or ""):lower()
 								elseif spec.ColumnIndex == 1 then
+									local countA, bankA = char.getItemCounts(a.item)
+									local countB, bankB = char.getItemCounts(b.item)
+									valA = countA + bankA
+									valB = countB + bankB
+								elseif spec.ColumnIndex == 2 then
 									valA = (a.status == "Success" and a.hasData and a.medianPlatPrice) or -1
 									valB = (b.status == "Success" and b.hasData and b.medianPlatPrice) or -1
-								elseif spec.ColumnIndex == 2 then
+								elseif spec.ColumnIndex == 3 then
 									valA = char.getItemValue(a.item)
 									valB = char.getItemValue(b.item)
 								else
@@ -338,9 +407,7 @@ function ui.render(state)
 					for index, entry in ipairs(state.bulkPriceHistory) do
 						ImGui.TableNextRow()
 
-						-- Pre-calculate vendor sell price and check if it is higher/equal to market median price
 						local vValue = char.getItemValue(entry.item)
-
 						local isVendorBetter = false
 						if entry.status == "Success" and entry.hasData and entry.medianPlatPrice then
 							local vendorPlatPrice = vValue / 1000
@@ -349,10 +416,9 @@ function ui.render(state)
 							end
 						end
 
-						-- Column 0: Item Name
 						ImGui.TableSetColumnIndex(0)
 						if isVendorBetter then
-							ImGui.TextColored(1.0, 0.8, 0.2, 1.0, entry.item) -- Highlight item name in gold
+							textColored(theme.text.gold, entry.item)
 							if ImGui.IsItemHovered() then
 								if ImGui.BeginTooltip() then
 									ImGui.Text("Vendor sell price is higher or equal to market median price!")
@@ -363,36 +429,37 @@ function ui.render(state)
 							ImGui.Text(entry.item)
 						end
 
-						-- Column 1: Median Price / Status
 						ImGui.TableSetColumnIndex(1)
+						local count, bankCount = char.getItemCounts(entry.item)
+						ImGui.Text(string.format("%d (%d)", count, bankCount))
+
+						ImGui.TableSetColumnIndex(2)
 						if entry.status == "Searching..." then
-							ImGui.TextColored(1.0, 0.8, 0.2, 1.0, entry.status)
+							textColored(theme.text.warning, entry.status)
 						elseif entry.status == "Success" then
 							if entry.hasData and entry.medianPlatPrice then
-								ImGui.TextColored(0.4, 1.0, 0.4, 1.0, string.format("%s pp", util.formatNumber(math.floor(entry.medianPlatPrice))))
+								textColored(theme.text.success, string.format("%s pp", util.formatNumber(math.floor(entry.medianPlatPrice))))
 							else
-								ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "No price found")
+								textColored(theme.text.error, "No price found")
 							end
 						elseif entry.status == "Not Checked" then
-							ImGui.TextColored(0.6, 0.6, 0.6, 1.0, "-")
+							textColored(theme.text.disabled, "-")
 						else
-							ImGui.TextColored(1.0, 0.3, 0.3, 1.0, entry.status or "N/A")
+							textColored(theme.text.error, entry.status or "N/A")
 						end
 
-						-- Column 2: Vendor Sell Price
-						ImGui.TableSetColumnIndex(2)
+						ImGui.TableSetColumnIndex(3)
 						if vValue > 0 then
 							if isVendorBetter then
-								ImGui.TextColored(0.4, 1.0, 0.4, 1.0, util.formatVendorPrice(vValue)) -- Highlight vendor price in green if it's better
+								textColored(theme.text.success, util.formatVendorPrice(vValue))
 							else
-								ImGui.TextColored(0.7, 0.7, 0.7, 1.0, util.formatVendorPrice(vValue))
+								textColored(theme.text.muted, util.formatVendorPrice(vValue))
 							end
 						else
 							ImGui.Text("-")
 						end
 
-						-- Column 3: Add Button
-						ImGui.TableSetColumnIndex(3)
+						ImGui.TableSetColumnIndex(4)
 						local isAlreadyListed = false
 						for _, hEntry in ipairs(state.priceHistory) do
 							if hEntry.item:lower() == entry.item:lower() then
@@ -412,9 +479,9 @@ function ui.render(state)
 								ImGui.PopStyleVar()
 							end
 						elseif entry.status == "Success" and (not entry.hasData or not entry.medianPlatPrice) then
-							ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.15, 0.15, 1.0)
-							ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.8, 0.25, 0.25, 1.0)
-							ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.5, 0.1, 0.1, 1.0)
+							pushStyleColor(ImGuiCol.Button, theme.style.buttonDanger.bg)
+							pushStyleColor(ImGuiCol.ButtonHovered, theme.style.buttonDanger.hovered)
+							pushStyleColor(ImGuiCol.ButtonActive, theme.style.buttonDanger.active)
 
 							if isAlreadyListed then
 								ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
@@ -435,19 +502,15 @@ function ui.render(state)
 					ImGui.EndTable()
 				end
 
+				ImGui.EndDisabled()
 				ImGui.EndTabItem()
 			end
 
 			if ImGui.BeginTabItem("Trade") then
-				-- ----------------------------------------------------
-				-- SECTION 2: Sales String Generation
-				-- ----------------------------------------------------
+				ImGui.BeginDisabled(state.isBroadcastingToggled)
 				ImGui.Text("Pricing & Sales Tool:")
 
-				local newBroadcastCmd, changedBroadcastCmd = ImGui.InputText("Chat Command", state.broadcastCommand)
-				if changedBroadcastCmd then
-					state:setBroadcastCommand(newBroadcastCmd)
-				end
+				-- Channel command configured in settings now
 
 				local previewLines = ui.getAuctionLines(state, false)
 				local numSaleItems = 0
@@ -457,19 +520,126 @@ function ui.render(state)
 					end
 				end
 
-				ImGui.Text("Broadcast Summary:")
-				local summaryText
-				if numSaleItems == 0 then
-					summaryText = "0 Items in your Sale List. No broadcasts will be sent."
-				else
-					local numMessages = math.ceil(numSaleItems / 4)
-					local minutesToSend = math.ceil(numMessages / 5)
-					summaryText = string.format("%d Items in your Sale List. A Maximum of 5 Messages (20 Items) will be sent per minute, so your broadcast Interval will be added to the %d Minutes it takes to send your items.", numSaleItems, minutesToSend)
-				end
+				ImGui.TextColored(theme.text.info[1], theme.text.info[2], theme.text.info[3], theme.text.info[4], "Broadcast Status & Checklist:")
 
-				ImGui.PushStyleColor(ImGuiCol.FrameBg, 0.15, 0.15, 0.15, 1.0)
-				ImGui.InputTextMultiline("##salesSummary", summaryText, -1, 60, ImGuiInputTextFlags.ReadOnly)
-				ImGui.PopStyleColor()
+				local interval = state.config.broadcastInterval or 120
+
+				local checklistHeight = state.isBroadcastingToggled and 100 or 200
+				ImGui.BeginChild("TimelineChecklist", -1, checklistHeight, true)
+				if numSaleItems == 0 then
+					ImGui.TextDisabled("   No items in your Sale List. Add items to start broadcasting.")
+				elseif not state.isBroadcastingToggled then
+					textColored(theme.text.muted, "   Broadcasting is turned off. Press 'Broadcast' below to begin.")
+					local cmd = (state.config.broadcastCommand and state.config.broadcastCommand ~= "") and state.config.broadcastCommand or "/auction"
+					local previewTimeline = util.buildBroadcastTimeline(previewLines, interval, cmd)
+					if #previewTimeline > 0 then
+						ImGui.Spacing()
+						textColored(theme.text.info, "   Queue Preview:")
+						for _, step in ipairs(previewTimeline) do
+							if step.type == "send" then
+								ImGui.TextDisabled("     " .. step.description)
+							elseif step.type == "pause" then
+								if step.reason == "Anti-Spam Pause" then
+									textColored(theme.text.warning, "     " .. step.description)
+								else
+									textColored(theme.text.gold, "     " .. step.description)
+								end
+							end
+						end
+					end
+				else
+					if state.timeline and #state.timeline > 0 then
+						local currentIdx = state.currentStepIndex or 1
+						local step = state.timeline[currentIdx]
+						if step then
+							local remaining = math.max(0, (state.nextBroadcastTime or 0) - mq.gettime()) / 1000
+							local duration = (step.type == "send") and 1.0 or step.duration
+							local progress = math.max(0.0, math.min(1.0, (duration - remaining) / duration))
+
+							local overlay
+							if step.type == "send" then
+								overlay = string.format("Step %d/%d: %s", currentIdx, #state.timeline, step.description)
+							else
+								overlay = string.format("Step %d/%d: %s (%ds remaining)", currentIdx, #state.timeline, step.description, math.ceil(remaining))
+							end
+
+							local barColor
+							if step.type == "send" then
+								barColor = theme.text.success
+							elseif step.reason == "Anti-Spam Pause" then
+								barColor = theme.text.warning
+							else
+								barColor = theme.text.info
+							end
+
+							ImGui.Spacing()
+							local barWidth = ImGui.GetContentRegionAvail()
+							local startY = ImGui.GetCursorPosY()
+
+							pushStyleColor(ImGuiCol.PlotHistogram, barColor)
+							ImGui.ProgressBar(progress, ImVec2(-1, 26), "")
+							ImGui.PopStyleColor()
+
+							local endY = ImGui.GetCursorPosY()
+
+							-- Overlay high-contrast centered text on top of the bar
+							local textWidth = ImGui.CalcTextSize(overlay)
+							local posX = (barWidth - textWidth) / 2
+							if posX < 0 then posX = 0 end
+
+							ImGui.SetCursorPosY(startY + 4)
+							ImGui.SetCursorPosX(posX)
+							textColored(theme.text.gold, overlay)
+
+							ImGui.SetCursorPosY(endY)
+
+							-- Now calculate and render the second progress bar (Total Cycle Progress)
+							local totalCycleTime = 0
+							local elapsedCycleTime = 0
+							for i, tStep in ipairs(state.timeline) do
+								local stepDuration = (tStep.type == "send") and 1.0 or tStep.duration
+								totalCycleTime = totalCycleTime + stepDuration
+
+								if i < currentIdx then
+									elapsedCycleTime = elapsedCycleTime + stepDuration
+								elseif i == currentIdx then
+									elapsedCycleTime = elapsedCycleTime + (progress * stepDuration)
+								end
+							end
+
+							local totalProgress = totalCycleTime > 0 and (elapsedCycleTime / totalCycleTime) or 0.0
+							local totalOverlay = string.format("Total Progress: %d%% (%d/%ds)", math.floor(totalProgress * 100), math.floor(elapsedCycleTime), math.floor(totalCycleTime))
+
+							ImGui.Spacing()
+							local startY2 = ImGui.GetCursorPosY()
+
+							pushStyleColor(ImGuiCol.PlotHistogram, theme.text.muted)
+							ImGui.ProgressBar(totalProgress, ImVec2(-1, 22), "")
+							ImGui.PopStyleColor()
+
+							local endY2 = ImGui.GetCursorPosY()
+
+							local textWidth2 = ImGui.CalcTextSize(totalOverlay)
+							local posX2 = (barWidth - textWidth2) / 2
+							if posX2 < 0 then posX2 = 0 end
+
+							ImGui.SetCursorPosY(startY2 + 2)
+							ImGui.SetCursorPosX(posX2)
+							textColored(theme.text.muted, totalOverlay)
+
+							ImGui.SetCursorPosY(endY2)
+							ImGui.Dummy(ImVec2(1, 1))
+						else
+							textColored(theme.text.muted, "   Preparing next broadcast cycle...")
+						end
+					else
+						textColored(theme.text.muted, "   Preparing next broadcast cycle...")
+					end
+				end
+				ImGui.EndChild()
+				ImGui.Spacing()
+
+				ImGui.EndDisabled() -- Stop disabling for broadcast button
 
 				local hasItemsToBroadcast = (#previewLines > 0)
 				local isToggled = not not state.isBroadcastingToggled
@@ -485,21 +655,22 @@ function ui.render(state)
 				local buttonLabel
 				if isToggled then
 					buttonLabel = "Stop Broadcast"
-					ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.15, 0.15, 1.0)
-					ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.8, 0.25, 0.25, 1.0)
-					ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.5, 0.1, 0.1, 1.0)
+					pushStyleColor(ImGuiCol.Button, theme.style.buttonDanger.bg)
+					pushStyleColor(ImGuiCol.ButtonHovered, theme.style.buttonDanger.hovered)
+					pushStyleColor(ImGuiCol.ButtonActive, theme.style.buttonDanger.active)
 				else
-					buttonLabel = string.format("Broadcast via %s", (state.broadcastCommand ~= "" and state.broadcastCommand or "/auction"))
+					buttonLabel = string.format("Broadcast via %s", (state.config.broadcastCommand and state.config.broadcastCommand ~= "" and state.config.broadcastCommand or "/auction"))
 				end
 
 				if ImGui.Button(buttonLabel, buttonWidth, 30) and canBroadcast then
 					if isToggled then
-						state:setBroadcastingToggled(false)
-						state:clearBroadcastQueue()
+						state.isBroadcastingToggled = false
+						state.timeline = nil
 					else
-						state:setBroadcastingToggled(true)
-						local realAuctionLines = ui.getAuctionLines(state, true)
-						state:enqueueBroadcast(realAuctionLines)
+						state.isBroadcastingToggled = true
+						state.timeline = nil
+						state.currentStepIndex = 1
+						state.nextBroadcastTime = 0
 					end
 				end
 
@@ -513,31 +684,15 @@ function ui.render(state)
 
 				ImGui.SameLine()
 
+				ImGui.BeginDisabled(state.isBroadcastingToggled) -- Resume disabling for list/recheck actions
 				if ImGui.Button("Recheck Qty", buttonWidth, 30) then
 					state:recheckQty(char.getItemCounts)
 				end
 
-				-- Status Line indicating broadcast progress
-				ImGui.Spacing()
-				if isToggled then
-					if #state.broadcastQueue > 0 then
-						ImGui.TextColored(0.4, 0.9, 0.4, 1.0, string.format("Status: Sending items (%d messages remaining)...", #state.broadcastQueue))
-					elseif state.nextToggleBroadcastTime then
-						local remaining = math.max(0, state.nextToggleBroadcastTime - os.time())
-						ImGui.TextColored(1.0, 0.8, 0.2, 1.0, string.format("Status: Waiting for next broadcast interval (%ds remaining)...", remaining))
-					else
-						ImGui.TextColored(0.7, 0.7, 0.7, 1.0, "Status: Preparing next broadcast...")
-					end
-				else
-					ImGui.TextColored(0.7, 0.7, 0.7, 1.0, "Status: Idle")
-				end
-				ImGui.Spacing()
+				-- Status details are handled above in the timeline legend block.
 
 				ImGui.Separator()
 
-				-- ----------------------------------------------------
-				-- SECTION 3: Price History Table
-				-- ----------------------------------------------------
 				ImGui.Text("Price History:")
 				ImGui.SameLine(ImGui.GetWindowWidth() - 90)
 				if ImGui.Button("Clear All", 75, 0) then
@@ -624,25 +779,21 @@ function ui.render(state)
 					for index, entry in ipairs(state.priceHistory) do
 						ImGui.TableNextRow()
 
-						-- Column 0: Remove Button
 						ImGui.TableSetColumnIndex(0)
-
-						-- Draw the red remove button (X)
-						ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.1, 0.1, 1.0)
-						ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.8, 0.2, 0.2, 1.0)
-						ImGui.PushStyleColor(ImGuiCol.ButtonActive, 1.0, 0.3, 0.3, 1.0)
+						pushStyleColor(ImGuiCol.Button, theme.style.buttonRemove.bg)
+						pushStyleColor(ImGuiCol.ButtonHovered, theme.style.buttonRemove.hovered)
+						pushStyleColor(ImGuiCol.ButtonActive, theme.style.buttonRemove.active)
 						if ImGui.Button("X##rem_" .. entry.id, 18, 18) then
-							state:setItemToRemove(entry)
+							state.itemToRemove = entry
 						end
 						ImGui.PopStyleColor(3)
 
-						-- Column 1: Item Name
 						ImGui.TableSetColumnIndex(1)
 						if entry.status == "Success" and entry.data then
 							local sellSamples = entry.data.sellSampleSize or 0
 							local limit = (state.config and state.config.lowSampleSize) or 5
 							if sellSamples <= limit then
-								ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "[!] ")
+								textColored(theme.text.error, "[!] ")
 								if ImGui.IsItemHovered() then
 									if ImGui.BeginTooltip() then
 										ImGui.Text(string.format("Small sample size: only %d sample(s) available", sellSamples))
@@ -653,39 +804,33 @@ function ui.render(state)
 							end
 						end
 						local displayName = (entry.data and entry.data.item) or entry.item
-						ImGui.TextColored(0.4, 0.8, 1.0, 1.0, displayName)
+						textColored(theme.text.info, displayName)
 						if ImGui.IsItemHovered() then
 							if ImGui.BeginTooltip() then
-								ImGui.Text("Left-click to view standalone price details\nRight-click to pick up item to cursor")
+								ImGui.Text("Right-click to pick up item to cursor")
 								ImGui.EndTooltip()
 							end
-						end
-						if ImGui.IsItemClicked(0) then
-							state:requestCursorQuery(entry.item)
 						end
 						if ImGui.IsItemClicked(1) then
 							chat.executeCommand(string.format('/nomodkey /itemnotify "%s" leftmouseup', entry.item))
 						end
 
-						-- Column 2: Qty (Bank)
 						ImGui.TableSetColumnIndex(2)
 						local count, bankCount = char.getItemCounts(entry.item)
 						ImGui.Text(string.format("%d (%d)", count, bankCount))
 
-						-- Column 3: Avg Sell
 						ImGui.TableSetColumnIndex(3)
 						if entry.status ~= "Success" then
 							if entry.status == "Searching..." then
-								ImGui.TextColored(1.0, 0.8, 0.2, 1.0, entry.status)
+								textColored(theme.text.warning, entry.status)
 							else
-								ImGui.TextColored(1.0, 0.3, 0.3, 1.0, entry.status)
+								textColored(theme.text.error, entry.status)
 							end
 						else
 							local sellPrice = (entry.data and entry.data.sellAverage) or 0
-							ImGui.TextColored(0.4, 1.0, 0.4, 1.0, string.format("%.1f pp", sellPrice))
+							textColored(theme.text.success, string.format("%.1f pp", sellPrice))
 						end
 
-						-- Column 4: List Price (Editable)
 						ImGui.TableSetColumnIndex(4)
 						if entry.status == "Success" then
 							ImGui.PushItemWidth(-1)
@@ -701,70 +846,62 @@ function ui.render(state)
 							ImGui.Text("-")
 						end
 
-						-- Extract highest/lowest stats
 						local highestWTS, lowestWTS, highestWTB = getPriceStats(entry)
 
-						-- Column 5: High WTS
 						ImGui.TableSetColumnIndex(5)
 						if entry.status == "Success" and highestWTS then
-							ImGui.TextColored(0.4, 0.9, 0.4, 1.0, string.format("%d pp", math.floor(highestWTS)))
+							textColored(theme.text.green, string.format("%d pp", math.floor(highestWTS)))
 						else
 							ImGui.Text("-")
 						end
 
-						-- Column 6: Low WTS
 						ImGui.TableSetColumnIndex(6)
 						if entry.status == "Success" and lowestWTS then
-							ImGui.TextColored(0.4, 0.9, 0.4, 1.0, string.format("%d pp", math.floor(lowestWTS)))
+							textColored(theme.text.green, string.format("%d pp", math.floor(lowestWTS)))
 						else
 							ImGui.Text("-")
 						end
 
-						-- Column 7: Avg Buy
 						ImGui.TableSetColumnIndex(7)
 						if entry.status == "Success" then
 							local buyPrice = (entry.data and entry.data.buyAverage) or 0
-							ImGui.TextColored(1.0, 0.7, 0.4, 1.0, string.format("%.1f pp", buyPrice))
+							textColored(theme.text.orange, string.format("%.1f pp", buyPrice))
 						else
 							ImGui.Text("-")
 						end
 
-						-- Column 8: High WTB
 						ImGui.TableSetColumnIndex(8)
 						if entry.status == "Success" and highestWTB then
-							ImGui.TextColored(1.0, 0.7, 0.4, 1.0, string.format("%d pp", math.floor(highestWTB)))
+							textColored(theme.text.orange, string.format("%d pp", math.floor(highestWTB)))
 						else
 							ImGui.Text("-")
 						end
 
-						-- Column 9: Details on hover
 						ImGui.TableSetColumnIndex(9)
 						if entry.status == "Success" then
-							ImGui.TextColored(0.4, 0.8, 1.0, 1.0, "Hover")
+							textColored(theme.text.info, "Hover")
 							if ImGui.IsItemHovered() then
 								renderDetailsTooltip(entry)
 							end
 						else
 							ImGui.Text("-")
 						end
-
-
 					end
 
 					state:removePendingItem()
 
 					ImGui.EndTable()
 				end
+				ImGui.EndDisabled()
 
 				ImGui.EndTabItem()
 			end
 
 			if ImGui.BeginTabItem("Communication") then
-				ImGui.TextColored(0.4, 0.8, 1.0, 1.0, "Tells Received Log:")
+				textColored(theme.text.info, "Tells Received Log:")
 				ImGui.Separator()
 				ImGui.Spacing()
 
-				-- Add inline configuration for reply message
 				ImGui.PushItemWidth(-1)
 				local valReply, changedReply = ImGui.InputText("##quick_reply_msg", state.config.replyMessage or "Sure, near Parcel")
 				if changedReply then
@@ -790,15 +927,12 @@ function ui.render(state)
 					for index, tell in ipairs(state.receivedTells) do
 						ImGui.TableNextRow()
 
-						-- Column 0: From
 						ImGui.TableSetColumnIndex(0)
 						ImGui.Text(tell.sender or "Unknown")
 
-						-- Column 1: Message
 						ImGui.TableSetColumnIndex(1)
 						ImGui.TextWrapped(tell.message or "")
 
-						-- Highlight listed items matched in the message
 						local msgLower = (tell.message or ""):lower()
 						local matched = {}
 						local totalPrice = 0
@@ -815,26 +949,23 @@ function ui.render(state)
 							end
 						end
 						if #matched > 0 then
-							ImGui.PushStyleColor(ImGuiCol.Text, 0.4, 1.0, 0.4, 1.0)
+							pushStyleColor(ImGuiCol.Text, theme.text.success)
 							ImGui.TextWrapped(string.format(" (interested in %s, expect a total of %d pp in the Trade Window!)", table.concat(matched, ", "), totalPrice))
 							ImGui.PopStyleColor()
 						end
 
-						-- Column 2: Operations
 						ImGui.TableSetColumnIndex(2)
 
-						-- Done/Check button
-						ImGui.PushStyleColor(ImGuiCol.Button, 0.1, 0.5, 0.1, 1.0)
-						ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.7, 0.2, 1.0)
-						ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0.3, 0.9, 0.3, 1.0)
+						pushStyleColor(ImGuiCol.Button, theme.style.buttonDone.bg)
+						pushStyleColor(ImGuiCol.ButtonHovered, theme.style.buttonDone.hovered)
+						pushStyleColor(ImGuiCol.ButtonActive, theme.style.buttonDone.active)
 						if ImGui.Button("V##done_" .. index, 30, 18) then
-							state:setTellToRemove(tell)
+							state.tellToRemove = tell
 						end
 						ImGui.PopStyleColor(3)
 
 						ImGui.SameLine()
 
-						-- Reply button
 						if ImGui.Button("Reply##rep_" .. index, 42, 18) then
 							local replyCmd = string.format("/tell %s %s", tell.sender or "Unknown", state.config.replyMessage or "Sure, near Parcel")
 							chat.executeCommand(replyCmd)
@@ -849,17 +980,15 @@ function ui.render(state)
 				ImGui.EndTabItem()
 			end
 
-
-
-			-- Configuration Tab (Colored Green)
-			ImGui.PushStyleColor(ImGuiCol.Tab, 0.1, 0.4, 0.1, 0.8)
-			ImGui.PushStyleColor(ImGuiCol.TabHovered, 0.2, 0.6, 0.2, 0.8)
-			ImGui.PushStyleColor(ImGuiCol.TabActive, 0.3, 0.8, 0.3, 0.8)
+			pushStyleColor(ImGuiCol.Tab, theme.style.tabConfig.bg)
+			pushStyleColor(ImGuiCol.TabHovered, theme.style.tabConfig.hovered)
+			pushStyleColor(ImGuiCol.TabActive, theme.style.tabConfig.active)
 
 			if ImGui.BeginTabItem("Configuration") then
+				ImGui.BeginDisabled(state.isBroadcastingToggled)
 				ImGui.PopStyleColor(3)
 
-				ImGui.TextColored(0.4, 0.8, 1.0, 1.0, "Configuration Settings:")
+				textColored(theme.text.info, "Configuration Settings:")
 				ImGui.Separator()
 				ImGui.Spacing()
 
@@ -873,8 +1002,6 @@ function ui.render(state)
 					state:updateConfigKey("lowSampleSize", valLimit)
 				end
 				ImGui.PopItemWidth()
-
-
 
 				ImGui.Spacing()
 				ImGui.Text("Default Reply Message:")
@@ -907,11 +1034,39 @@ function ui.render(state)
 				ImGui.PopItemWidth()
 
 				ImGui.Spacing()
+				ImGui.Text("Chat Channel / Command:")
+				ImGui.PushItemWidth(-1)
+				local valCmd, changedCmd = ImGui.InputText("##chat_command", state.config.broadcastCommand or "/auction")
+				if changedCmd and valCmd ~= "" then
+					state:updateConfigKey("broadcastCommand", valCmd)
+				end
+				ImGui.PopItemWidth()
+
+				ImGui.Spacing()
+				ImGui.Text("UI Color Theme Preset:")
+				ImGui.PushItemWidth(-1)
+				local themeNames = { "Default", "Solarized Dark", "Nord", "Pastel", "Solarized Light", "Windows 95" }
+				local currentThemeName = state.config.themeName or "Default"
+				local currentIdx = 1
+				for idx, name in ipairs(themeNames) do
+					if name == currentThemeName then
+						currentIdx = idx
+						break
+					end
+				end
+				local newIdx = ImGui.Combo("##theme_preset", currentIdx, themeNames)
+				if newIdx ~= currentIdx then
+					state:updateConfigKey("themeName", themeNames[newIdx])
+				end
+				ImGui.PopItemWidth()
+
+				ImGui.Spacing()
 				local valDebug, changedDebug = ImGui.Checkbox("Enable Debug Logging", state.config.debug or false)
 				if changedDebug then
 					state:updateConfigKey("debug", valDebug)
 				end
 
+				ImGui.EndDisabled()
 				ImGui.EndTabItem()
 			else
 				ImGui.PopStyleColor(3)
@@ -923,77 +1078,8 @@ function ui.render(state)
 	ImGui.End()
 
 	renderCursorQueryWindow(state)
-end
 
--- Helper function to render a standalone window for the queried cursor item details
-function renderCursorQueryWindow(state)
-	if not state.showCursorQueryWindow or not state.cursorQueryResult then
-		return
-	end
-
-	ImGui.SetNextWindowSize(380, 420, ImGuiCond.FirstUseEver)
-	local open, shouldDraw = ImGui.Begin("Price Details: " .. state.cursorQueryResult.item, state.showCursorQueryWindow)
-	if state.showCursorQueryWindow ~= open then
-		state:setShowCursorQueryWindow(open)
-	end
-
-	if shouldDraw then
-		local result = state.cursorQueryResult
-
-		-- Check if already listed in Trade list (cached at top to avoid duplication)
-		local isAlreadyListed = false
-		for _, hEntry in ipairs(state.priceHistory) do
-			if hEntry.item:lower() == result.item:lower() then
-				isAlreadyListed = true
-				break
-			end
-		end
-
-		ImGui.TextColored(0.4, 0.8, 1.0, 1.0, "Item: " .. result.item)
-		ImGui.Separator()
-
-		if result.status == "Searching..." then
-			ImGui.TextColored(1.0, 0.8, 0.2, 1.0, "Searching for pricing data...")
-		elseif result.status == "Success" and result.data then
-			local data = result.data
-			ImGui.Text(string.format("Sellers Avg: %.1f pp (Samples: %d)", data.sellAverage or 0, data.sellSampleSize or 0))
-			ImGui.Text(string.format("Buyers Avg: %.1f pp (Samples: %d)", data.buyAverage or 0, data.buySampleSize or 0))
-			ImGui.Spacing()
-
-			drawTransactionTable("CursorTable", "Recent Sell Offers (WTS)", data.recentSellSales)
-			ImGui.Spacing()
-			drawTransactionTable("CursorTable", "Recent Buy Offers (WTB)", data.recentBuySales)
-			ImGui.Spacing()
-			ImGui.Separator()
-			ImGui.Spacing()
-
-			if isAlreadyListed then
-				ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
-			end
-			if ImGui.Button(isAlreadyListed and "Already Listed in Trade" or "Add to Trade List", -1, 30) and not isAlreadyListed then
-				queueSearch(state, result.item)
-			end
-			if isAlreadyListed then
-				ImGui.PopStyleVar()
-			end
-
-		else
-			ImGui.TextColored(1.0, 0.3, 0.3, 1.0, "Status: " .. tostring(result.status or "Error"))
-			ImGui.Spacing()
-
-			if isAlreadyListed then
-				ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
-			end
-			if ImGui.Button(isAlreadyListed and "Already Listed in Trade" or "Add with Default Price", -1, 30) and not isAlreadyListed then
-				local defaultPrice = (state.config and state.config.defaultPlatPrice) or 1000
-				state:addHistoryEntryWithDefaultPrice(result.item, defaultPrice, dto)
-			end
-			if isAlreadyListed then
-				ImGui.PopStyleVar()
-			end
-		end
-	end
-	ImGui.End()
+	theme.pop()
 end
 
 return ui

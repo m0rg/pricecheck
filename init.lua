@@ -1,24 +1,20 @@
 local mq = require("mq")
 
--- Reusable code configuration for required plugins
 local REQUIRED_PLUGINS = {
 	{
 		name = "MQ2LinkDB",
 	},
 }
 
--- Reusable check function to ensure required plugins are loaded
 local function ensurePlugins()
 	for _, p in ipairs(REQUIRED_PLUGINS) do
 		local loaded = mq.TLO.Plugin(p.name).IsLoaded()
 
 		if not loaded then
-			-- Attempt to load it
 			printf("\ar[PriceCheck] Required plugin %s is not loaded. Attempting to load...\ax", p.name)
 			mq.cmdf("/plugin %s", p.name)
-			mq.delay(500) -- brief pause to let it load
+			mq.delay(500)
 
-			-- Check again
 			loaded = mq.TLO.Plugin(p.name).IsLoaded()
 		end
 
@@ -50,14 +46,12 @@ local dto = require("modules.dto")
 local chat = require("modules.chat")
 local util = require("modules.util")
 
--- Initialize modules with dependencies (SRP / DI)
 ui.setup(char, dto, chat, util)
 chat.setup(dto)
 http.setup(json, curl)
 
 local state
 
--- Default configuration settings
 local defaultConfig = {
 	lowSampleSize = 5,
 	debounceMin = 400,
@@ -66,6 +60,8 @@ local defaultConfig = {
 	broadcastInterval = 120,
 	debug = true,
 	defaultPlatPrice = 1000,
+	broadcastCommand = "/auction",
+	themeName = "Default",
 }
 
 local function saveConfig()
@@ -91,43 +87,43 @@ end
 local loadedHistory = storage.loadHistory()
 local loadedConfig = storage.loadConfig(defaultConfig)
 
--- Ensure every entry has a valid unique ID on boot
+local itemsToFilter = {}
 for i, entry in ipairs(loadedHistory) do
 	if type(entry) == "table" and type(entry.item) == "string" then
 		if not entry.id or entry.id == "" then
 			entry.id = string.format("%d_%d", os.time(), math.random(100000, 999999) + i)
 		end
-	end
-end
-
--- Build static snapshot queue of items to filter in background to avoid UI concurrent mutation race conditions
-local itemsToFilter = {}
-for _, entry in ipairs(loadedHistory) do
-	if type(entry) == "table" and type(entry.item) == "string" then
 		table.insert(itemsToFilter, { id = entry.id, item = entry.item })
 	end
 end
 
--- Populate bulk history on startup with names only
 local initialBulkHistory = {}
 local initItems = char.getUniqueInventoryItemTypes()
 for _, item in ipairs(initItems) do
 	table.insert(initialBulkHistory, dto.newBulkEntry(item.id, item.name))
 end
 
--- Shared state context table (encapsulating all state without using globals)
 state = stateManager.new(loadedHistory, loadedConfig, initialBulkHistory)
 logger.setup(state)
 
--- Write back the config on boot
-
--- Register event listener for incoming tells
 chat.registerTellEvent(state)
 
--- Helper function to clean and validate plain-text item names
+mq.bind("/pricecheck", function(...)
+	local args = { ... }
+	local itemName
+	if #args > 0 then
+		itemName = table.concat(args, " ")
+	else
+		itemName = char.getCursorItemName()
+	end
 
+	if itemName and itemName ~= "" then
+		state:requestCursorQuery(itemName)
+	else
+		printf("\ar[PriceCheck] No item found on your cursor to check.\ax")
+	end
+end)
 
--- Register the ImGui render loop callback with the shared state
 mq.imgui.init("PriceCheckWindow", function()
 	ui.render(state)
 end)
@@ -136,51 +132,27 @@ local lastSingleQueryTime = 0
 local needHistoryFilter = true
 local filterIndex = 1
 
--- Main script loop (running in the safe script coroutine thread)
 while state.openGUI do
 	mq.doevents()
 	http.tick()
 
-	-- Handle cursor query requests (non-blocking, independent of the trade searchQueue)
 	if state.cursorQueryPending then
 		local nowMs = mq.gettime()
 		if nowMs - lastSingleQueryTime >= 1000 then
 			local itemName = state.cursorQueryResult.item
-			state:clearCursorQueryPending()
+			state.cursorQueryPending = false
 			lastSingleQueryTime = nowMs
 			http.performSearch(itemName, function(success, data, statusText)
 				if state.cursorQueryResult and state.cursorQueryResult.item == itemName then
-					state:setCursorQueryResult({ item = itemName, status = statusText, data = data })
+					local result = { item = itemName, status = statusText, data = data }
+					state.cursorQueryResult = result
+					state:setCachedQuery(itemName, result)
 				end
 			end)
 		end
 	end
 
-	-- Handle toggled interval broadcasting
-	if state.isBroadcastingToggled then
-		local now = os.time()
-		if #state.broadcastQueue > 0 then
-			-- We are currently sending the items. Clear nextToggleBroadcastTime so the timer doesn't start until we are finished.
-			if state.nextToggleBroadcastTime then
-				state:setNextToggleBroadcastTime(nil)
-			end
-		else
-			-- Queue is empty! We are not sending.
-			if not state.nextToggleBroadcastTime then
-				-- We just completed a posting or just toggled it on. Start the interval timer now!
-				state:setNextToggleBroadcastTime(now + (state.config.broadcastInterval or 120))
-			else
-				-- Timer is running. Check if it has expired.
-				if now >= state.nextToggleBroadcastTime then
-					local realAuctionLines = ui.getAuctionLines(state, true)
-					state:enqueueBroadcast(realAuctionLines)
-					state:setNextToggleBroadcastTime(nil) -- Reset to nil so that the timer starts after this posting finishes
-				end
-			end
-		end
-	else
-		state:setNextToggleBroadcastTime(nil)
-	end
+	-- Broadcast timeline is evaluated and played asynchronously via chat.processBroadcastQueue(state) in the block below.
 
 	if needHistoryFilter then
 		if filterIndex <= #itemsToFilter then
@@ -197,20 +169,21 @@ while state.openGUI do
 			saveHistory()
 		end
 	end
+
 	local nowMs = mq.gettime()
 	if #state.searchQueue > 0 and not state.isSearching and (nowMs - lastSingleQueryTime >= 1000) then
 		local entry = state:popSearchQueue()
-		state:setSearching(true)
+		state.isSearching = true
 		lastSingleQueryTime = nowMs
 		http.performSearch(entry.item, function(success, data, statusText)
-			state:setSearching(false)
+			state.isSearching = false
 			state:updateSearchFinished(entry, success, data, statusText)
 		end)
 		mq.delay(100)
 	elseif #state.bulkQueue > 0 then
 		local ids = state.bulkQueue
-		state:setBulkQueue({})
-		state:setBulkSearching(true)
+		state.bulkQueue = {}
+		state.isBulkSearching = true
 		http.performBulkSearch(ids, function(result, success, errMsg)
 			state:updateBulkSearchResults(ids, result, success, errMsg, dto)
 		end)
@@ -221,17 +194,15 @@ while state.openGUI do
 		mq.delay(100)
 	end
 
-	-- Check for save requests
 	if state.saveRequested then
 		saveHistory()
-		state:clearSaveRequest()
+		state.saveRequested = false
 	end
 	if state.configSaveRequested then
 		saveConfig()
-		state:clearConfigSaveRequest()
+		state.configSaveRequested = false
 	end
 end
 
--- Save on exit
 saveHistory()
 saveConfig()
