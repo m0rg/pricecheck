@@ -6,7 +6,6 @@ local char = {}
 local BAG_SLOT_START = 23
 local BAG_SLOT_END = 34
 
--- Scans character inventory and returns all unique item types in worn bag slots
 function char.getUniqueInventoryItemTypes()
 	local items = {}
 	local seenIds = {}
@@ -14,6 +13,7 @@ function char.getUniqueInventoryItemTypes()
 	if not me or not me() then
 		return items
 	end
+
 	for i = BAG_SLOT_START, BAG_SLOT_END do
 		local bag = mq.TLO.Me.Inventory(i)
 		if bag and bag() then
@@ -42,31 +42,28 @@ function char.getUniqueInventoryItemTypes()
 	return items
 end
 
--- Returns inventory and bank counts of an item
 function char.getItemCounts(itemName)
 	if not itemName or itemName == "" then
 		return 0, 0
 	end
-	local countObj = mq.TLO.FindItemCount(string.format('=%s', itemName))
+	local countObj = mq.TLO.FindItemCount(string.format("=%s", itemName))
 	local count = (countObj and countObj()) or 0
-	local bankObj = mq.TLO.FindItemBankCount(string.format('=%s', itemName))
+	local bankObj = mq.TLO.FindItemBankCount(string.format("=%s", itemName))
 	local bankCount = (bankObj and bankObj()) or 0
 	return count, bankCount
 end
 
--- Returns the database link for an item by name
 function char.getItemLink(itemName)
 	if not itemName or itemName == "" then
 		return nil
 	end
-	local eqLink = mq.TLO.LinkDB(string.format('=%s', itemName))()
+	local eqLink = mq.TLO.LinkDB(string.format("=%s", itemName))()
 	if eqLink and eqLink ~= "" then
 		return eqLink
 	end
 	return nil
 end
 
--- Returns the name of the item currently held on the cursor
 function char.getCursorItemName()
 	local cursorItem = mq.TLO.Cursor
 	if cursorItem and cursorItem() then
@@ -75,12 +72,11 @@ function char.getCursorItemName()
 	return nil
 end
 
--- Returns the vendor value (in copper) of an item by name
 function char.getItemValue(itemName)
 	if not itemName or itemName == "" then
 		return 0
 	end
-	local itemObj = mq.TLO.FindItem(string.format('=%s', itemName))
+	local itemObj = mq.TLO.FindItem(string.format("=%s", itemName))
 	if itemObj and itemObj() then
 		return itemObj.Value() or 0
 	end

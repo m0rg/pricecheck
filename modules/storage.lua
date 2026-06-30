@@ -8,7 +8,6 @@ function storage.loadConfig(defaultConfig)
 	if type(data) ~= "table" then
 		return defaultConfig
 	end
-	-- Merge defaults for missing keys
 	for k, v in pairs(defaultConfig) do
 		if data[k] == nil then
 			data[k] = v

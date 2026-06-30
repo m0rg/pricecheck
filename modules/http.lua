@@ -54,7 +54,6 @@ function http.tick()
 	end
 end
 
--- Helper function to properly percent-encode URL parameters
 function http.urlEncode(str)
 	if not str then
 		return ""
@@ -96,7 +95,7 @@ function http.performSearch(itemName, onComplete)
 			timeout = 15,
 			writefunction = function(data)
 				table.insert(response_body, data)
-			end
+			end,
 		}
 	end)
 
@@ -139,13 +138,12 @@ function http.performSearch(itemName, onComplete)
 					onComplete(false, nil, "No price found")
 				end
 			end
-		end
+		end,
 	}
 
 	multi:add_handle(c)
 end
 
--- Function to execute bulk HTTP request (run only in main script loop)
 function http.performBulkSearch(itemIds, onComplete)
 	if not curl_ok or not curl then
 		if onComplete then
@@ -179,7 +177,7 @@ function http.performBulkSearch(itemIds, onComplete)
 		lastUpdated = nil,
 		lastError = nil,
 		onComplete = onComplete,
-		serverName = serverName
+		serverName = serverName,
 	}
 
 	for _, chunk in ipairs(chunks) do
@@ -212,7 +210,7 @@ function http.performBulkSearch(itemIds, onComplete)
 					},
 					writefunction = function(data)
 						table.insert(response_body, data)
-					end
+					end,
 				}
 			end)
 
@@ -263,7 +261,7 @@ function http.performBulkSearch(itemIds, onComplete)
 								end
 							end
 						end
-					end
+					end,
 				}
 				multi:add_handle(c)
 			end
