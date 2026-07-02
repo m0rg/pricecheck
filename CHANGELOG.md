@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.0] - 2026-07-02
+
+### Added
+- **Changelog Tab**: Added a new tab to display the `CHANGELOG.md` file contents inside the main window, with dynamic colorized parsing for headers.
+
+### Changed
+- **No Trade Filtering**: Filter out No Trade and No Drop items during bulk inventory scans to avoid listing untradeable items.
+
+### Removed
+- **Drop Slot**: Removed the Item Drop Slot interface block and separator from the main UI window, and deleted their unused preset styles.
+
 ## [1.1.1] - 2026-07-01
 
 ### Fixed

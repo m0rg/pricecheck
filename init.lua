@@ -104,6 +104,7 @@ for _, item in ipairs(initItems) do
 end
 
 state = stateManager.new(loadedHistory, loadedConfig, initialBulkHistory)
+state.changelog = storage.loadChangelog()
 logger.setup(state)
 
 chat.registerTellEvent(state)

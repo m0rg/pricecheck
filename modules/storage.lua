@@ -49,4 +49,21 @@ function storage.saveHistory(history)
 	return true
 end
 
+function storage.loadChangelog()
+	local path = string.format("%s/pricecheck/CHANGELOG.md", mq.luaDir)
+	local f = io.open(path, "r")
+	if not f then
+		f = io.open("CHANGELOG.md", "r")
+	end
+	if not f then
+		f = io.open("pricecheck/CHANGELOG.md", "r")
+	end
+	if not f then
+		return "Error: Could not load CHANGELOG.md"
+	end
+	local content = f:read("*a")
+	f:close()
+	return content
+end
+
 return storage

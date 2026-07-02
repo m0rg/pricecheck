@@ -250,35 +250,6 @@ function ui.render(state)
 	end
 
 	if shouldDraw then
-		local cursorItemName = char.getCursorItemName()
-
-		ImGui.BeginDisabled(state.isBroadcastingToggled)
-		ImGui.Text("Item Drop Slot:")
-		if cursorItemName then
-			local canSearch = true
-			if state.cursorQueryResult and state.cursorQueryResult.item:lower() == cursorItemName:lower() and state.cursorQueryResult.status == "Searching..." then
-				canSearch = false
-			end
-			if not canSearch then
-				ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5)
-			end
-			pushStyleColor(ImGuiCol.Button, theme.style.buttonCheck.bg)
-			if ImGui.Button(string.format("Click to Check: %s", cursorItemName), -1, 40) and canSearch then
-				state:requestCursorQuery(cursorItemName)
-			end
-			ImGui.PopStyleColor()
-			if not canSearch then
-				ImGui.PopStyleVar()
-			end
-		else
-			pushStyleColor(ImGuiCol.Button, theme.style.buttonCheckDisabled.bg)
-			ImGui.Button("Query Cursor Item\n(Hold an item on cursor to check price)", -1, 40)
-			ImGui.PopStyleColor()
-		end
-		ImGui.EndDisabled()
-
-		ImGui.Separator()
-
 		if ImGui.BeginTabBar("PriceCheckTabBar") then
 			if ImGui.BeginTabItem("Your Items") then
 				ImGui.BeginDisabled(state.isBroadcastingToggled)
@@ -305,7 +276,8 @@ function ui.render(state)
 						textColored(theme.text.info, "Last Updated: " .. readableTime)
 					end
 					if state.bulkKronoRate then
-						textColored(theme.text.gold, "Current Krono Price: " .. util.formatNumber(state.bulkKronoRate) .. " pp")
+						local kronoInt = math.floor(state.bulkKronoRate + 0.5)
+						textColored(theme.text.gold, "Current Krono Price: " .. util.formatNumber(kronoInt) .. " pp")
 					end
 					ImGui.Spacing()
 				end
@@ -1070,6 +1042,31 @@ function ui.render(state)
 				ImGui.EndTabItem()
 			else
 				ImGui.PopStyleColor(3)
+			end
+
+			if ImGui.BeginTabItem("Changelog") then
+				textColored(theme.text.info, "Changelog:")
+				ImGui.Separator()
+				ImGui.Spacing()
+
+				if ImGui.BeginChild("ChangelogScroll", 0, 0, true) then
+					local text = state.changelog or "No changelog available."
+					for line in string.gmatch(text .. "\n", "(.-)\r?\n") do
+						if line == "" then
+							ImGui.Spacing()
+						elseif line:sub(1, 3) == "###" then
+							textColored(theme.text.info, line)
+						elseif line:sub(1, 2) == "##" then
+							textColored(theme.text.success, line)
+						elseif line:sub(1, 1) == "#" then
+							textColored(theme.text.gold, line)
+						else
+							ImGui.TextUnformatted(line)
+						end
+					end
+					ImGui.EndChild()
+				end
+				ImGui.EndTabItem()
 			end
 
 			ImGui.EndTabBar()

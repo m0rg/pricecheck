@@ -6,6 +6,25 @@ local char = {}
 local BAG_SLOT_START = 23
 local BAG_SLOT_END = 34
 
+local function isNoTradeItem(itemObj)
+	if not itemObj or not itemObj() then
+		return false
+	end
+	local success, result = pcall(function()
+		return itemObj.NoTrade and itemObj.NoTrade()
+	end)
+	if success then
+		return result
+	end
+	local success2, result2 = pcall(function()
+		return itemObj.NoDrop and itemObj.NoDrop()
+	end)
+	if success2 then
+		return result2
+	end
+	return false
+end
+
 function char.getUniqueInventoryItemTypes()
 	local items = {}
 	local seenIds = {}
@@ -20,7 +39,7 @@ function char.getUniqueInventoryItemTypes()
 			if bag.Container() and bag.Container() > 0 then
 				for slot = 1, bag.Container() do
 					local item = bag.Item(slot)
-					if item and item() then
+					if item and item() and not isNoTradeItem(item) then
 						local itemId = item.ID()
 						local itemName = item.Name()
 						if itemId and itemId > 0 and not seenIds[itemId] then
@@ -30,11 +49,13 @@ function char.getUniqueInventoryItemTypes()
 					end
 				end
 			else
-				local itemId = bag.ID()
-				local itemName = bag.Name()
-				if itemId and itemId > 0 and not seenIds[itemId] then
-					seenIds[itemId] = true
-					table.insert(items, { id = itemId, name = itemName })
+				if not isNoTradeItem(bag) then
+					local itemId = bag.ID()
+					local itemName = bag.Name()
+					if itemId and itemId > 0 and not seenIds[itemId] then
+						seenIds[itemId] = true
+						table.insert(items, { id = itemId, name = itemName })
+					end
 				end
 			end
 		end

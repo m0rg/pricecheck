@@ -20,8 +20,6 @@ local presets = {
 			orange = { 0.98, 0.45, 0.09, 1.0 }, -- Orange
 		},
 		style = {
-			buttonCheck = { bg = { 0.02, 0.59, 0.41, 1.0 } },
-			buttonCheckDisabled = { bg = { 0.22, 0.25, 0.32, 0.5 } },
 			buttonDanger = {
 				bg = { 0.86, 0.15, 0.15, 1.0 },
 				hovered = { 0.94, 0.27, 0.27, 1.0 },
@@ -84,8 +82,6 @@ local presets = {
 			orange = { 0.80, 0.29, 0.09, 1.0 },
 		},
 		style = {
-			buttonCheck = { bg = { 0.16, 0.63, 0.60, 1.0 } }, -- Cyan
-			buttonCheckDisabled = { bg = { 0.03, 0.21, 0.26, 0.5 } },
 			buttonDanger = {
 				bg = { 0.86, 0.20, 0.18, 1.0 },
 				hovered = { 0.90, 0.30, 0.28, 1.0 },
@@ -148,8 +144,6 @@ local presets = {
 			orange = { 0.82, 0.53, 0.44, 1.0 },
 		},
 		style = {
-			buttonCheck = { bg = { 0.56, 0.74, 0.73, 1.0 } }, -- Nord7
-			buttonCheckDisabled = { bg = { 0.23, 0.26, 0.32, 0.5 } },
 			buttonDanger = {
 				bg = { 0.75, 0.38, 0.42, 1.0 },
 				hovered = { 0.80, 0.44, 0.48, 1.0 },
@@ -212,8 +206,6 @@ local presets = {
 			orange = { 0.90, 0.65, 0.55, 1.0 },
 		},
 		style = {
-			buttonCheck = { bg = { 0.53, 0.81, 0.74, 1.0 } },
-			buttonCheckDisabled = { bg = { 0.90, 0.88, 0.92, 0.5 } },
 			buttonDanger = {
 				bg = { 0.90, 0.60, 0.65, 1.0 },
 				hovered = { 0.95, 0.65, 0.70, 1.0 },
@@ -276,8 +268,6 @@ local presets = {
 			orange = { 0.70, 0.20, 0.00, 1.0 },
 		},
 		style = {
-			buttonCheck = { bg = { 0.10, 0.50, 0.48, 1.0 } }, -- Cyan
-			buttonCheckDisabled = { bg = { 0.90, 0.88, 0.80, 0.5 } },
 			buttonDanger = {
 				bg = { 0.75, 0.10, 0.10, 1.0 },
 				hovered = { 0.85, 0.20, 0.20, 1.0 },
@@ -340,8 +330,6 @@ local presets = {
 			orange = { 0.80, 0.40, 0.00, 1.0 },
 		},
 		style = {
-			buttonCheck = { bg = { 0.00, 0.50, 0.50, 1.0 } },
-			buttonCheckDisabled = { bg = { 0.60, 0.60, 0.60, 0.5 } },
 			buttonDanger = {
 				bg = { 0.50, 0.00, 0.00, 1.0 },
 				hovered = { 0.60, 0.10, 0.10, 1.0 },
